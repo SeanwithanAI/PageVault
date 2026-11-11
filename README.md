@@ -55,10 +55,24 @@ It's one Python file and a `static/` folder, using only the Python standard libr
 | **Account** | Change your password. |
 
 ### Built for reliable data
-- **The server is the only copy.** Browser storage (`localStorage`, IndexedDB, cookies, Cache Storage) is blocked inside apps. Apps that use `localStorage` work unchanged, because it's redirected to the server. Nothing is left in a browser to go out of sync.
+- **The server is the only copy** (see [Where app data is stored](#where-app-data-is-stored)). Browser storage (`localStorage`, IndexedDB, cookies, Cache Storage) is blocked inside apps. Apps that use `localStorage` work unchanged, because it's redirected to the server. Nothing is left in a browser to go out of sync.
 - **Conflict protection.** Every saved value has a version. A stale tab or device can't overwrite newer data; it's asked to reload instead.
 - **Saves on close.** Changes made right before a tab closes still reach the server.
 - **Attachments.** Apps can store files such as receipts and PDFs, up to 25 MB each.
+
+## Where app data is stored
+
+Where an app saves depends on **how it's opened**. It's always one place or the other, never both.
+
+| How the app is opened | Where its data is saved | What the app shows |
+|---|---|---|
+| **Through PageVault** (from the launcher or an `/a/<app>/` link) | **On the server only**, in the `data` dataset, separately for each signed-in person. Nothing is kept in the browser, so it follows you to any device. | **Saved to your server** |
+| **On its own** (the `.html` file opened directly in a browser) | **In that browser on that device only.** Other devices and other browsers won't see it. | **Saved on this device only** |
+
+- **Signed out:** visitors to an app shared as *Anyone with the link* can use it, but nothing they do is saved.
+- **Backup reminders:** inside PageVault the apps don't nag for backups, because the server keeps the data. Opened on their own, they remind you to download a backup now and then.
+- **Moving data between the two:** use the app's own **Export / Back up** on one side and **Import / Restore** on the other. In PageVault, each app's **⋯** menu also has **Export my data** and **Import my data from a backup**.
+- **Current versions with the status label:** A Better Ledger mk6+, A Better PTO Tracker mk4+, A Better Maintenance Tracker mk14+.
 
 ## Installation (TrueNAS SCALE 24.10+)
 
