@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PageVault</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><img src="/static/favicon.svg" alt="" width="26" height="26"> PageVault</div>
+    <span class="who" id="who"></span>
+    <button class="btn small" id="logout">Sign out</button>
+    <nav class="tabs" id="tabs">
+      <button data-tab="apps" class="on">My apps</button>
+      <button data-tab="manage" class="admin-only hidden">Manage apps</button>
+      <button data-tab="people" class="admin-only hidden">People</button>
+      <button data-tab="updates" class="admin-only hidden">Updates</button>
+      <button data-tab="account">Account</button>
+    </nav>
+  </header>
+
+  <!-- FIRST SIGN-IN: choose your own password -->
+  <section id="forcePw" class="hidden">
+    <div class="card" style="max-width:440px;margin:6vh auto 0">
+      <h2>Choose your own password</h2>
+      <p class="muted" style="margin-top:-4px">You signed in with a temporary password. Pick a new one to continue — only you will know it.</p>
+      <form id="forceForm">
+        <div style="margin-bottom:10px"><label for="fpNew">New password (8+ characters)</label><input id="fpNew" type="password" autocomplete="new-password" minlength="8" required></div>
+        <div style="margin-bottom:10px"><label for="fpConfirm">Confirm new password</label><input id="fpConfirm" type="password" autocomplete="new-password" minlength="8" required></div>
+        <div class="err" id="fpErr"></div>
+        <button class="btn primary" style="width:100%">Save and continue</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- MY APPS (everyone) -->
+  <section id="tab-apps">
+    <div class="tiles" id="tiles"></div>
+    <p class="muted" id="storage" style="text-align:center;margin-top:18px"></p>
+  </section>
+
+  <!-- MANAGE APPS (admin) -->
+  <section id="tab-manage" class="hidden">
+    <div class="card">
+      <h2>Upload an app</h2>
+      <div class="drop" id="drop">
+        <strong>Drop an .html file or a .zip of your site here</strong><br>
+        <span>or tap to choose a file</span>
+        <input type="file" id="file" accept=".html,.htm,.zip,text/html,application/zip" class="hidden">
+      </div>
+      <div class="grid">
+        <div><label for="upTitle">Name</label><input id="upTitle" placeholder="From file name"></div>
+        <div><label for="upSlug">Link name</label><input id="upSlug" placeholder="auto" autocapitalize="none"></div>
+        <div><label for="upVis">Who can use it</label><select id="upVis"></select></div>
+      </div>
+      <div class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:nowrap">
+        <div style="flex:1"><label for="upDesc">Short description (shown to people)</label><input id="upDesc" maxlength="300" placeholder="Optional"></div>
+        <div class="imgpick" id="upImgPick" title="Add an image">
+          <img id="upImgPrev" class="hidden" alt=""><span id="upImgHint">+ Image</span>
+          <input type="file" id="upImg" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="hidden">
+        </div>
+      </div>
+      <div id="upPeopleWrap" style="margin-top:12px"><label>People</label><div class="checks" id="upPeople"></div></div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn primary" id="upBtn" disabled>Upload</button>
+        <span class="muted" id="upName"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>All apps</h2>
+      <div class="pages" id="appList"></div>
+    </div>
+  </section>
+
+  <!-- PEOPLE (admin) -->
+  <section id="tab-people" class="hidden">
+    <div class="card">
+      <h2>Add a person</h2>
+      <form id="addUser">
+        <div class="grid">
+          <div><label for="nuName">Username</label><input id="nuName" autocapitalize="none" autocomplete="off" required></div>
+          <div><label for="nuPw">Temporary password</label><input id="nuPw" type="text" minlength="8" autocomplete="off" required></div>
+          <div><label for="nuAdmin">Role</label><select id="nuAdmin"><option value="0">Member</option><option value="1">Admin</option></select></div>
+        </div>
+        <div style="margin-top:12px"><label>Apps they can use</label><div class="checks" id="nuApps"></div></div>
+        <button class="btn primary" style="margin-top:14px">Add person</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>People</h2>
+      <div style="overflow-x:auto"><table id="users"></table></div>
+      <label class="row" style="color:var(--text);font-size:14px;cursor:pointer;margin-top:14px">
+        <input type="checkbox" id="regOpen" style="width:auto"> Let anyone create their own account from the sign-in page
+      </label>
+    </div>
+  </section>
+
+  <!-- UPDATES (admin) -->
+  <section id="tab-updates" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Apps in your GitHub repo</h2>
+        <button class="btn small" id="ghCheck">Check now</button>
+      </div>
+      <p class="muted" id="ghStatus" style="margin:6px 0 12px"></p>
+      <div class="pages" id="ghList"></div>
+    </div>
+    <div class="card">
+      <h2>Connect your GitHub repo</h2>
+      <form id="ghForm">
+        <div class="grid">
+          <div style="grid-column:1/-1"><label for="ghRepo">Repos (one per line)</label><textarea id="ghRepo" rows="3" placeholder="your-name/A-Better-Ledger&#10;your-name/A-Better-PTO-Tracker&#10;your-name/A-Better-Maintenance-Tracker" autocapitalize="none" autocomplete="off" spellcheck="false" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--text);font:inherit;resize:vertical"></textarea></div>
+          <div><label for="ghBranch">Branch</label><input id="ghBranch" placeholder="main" autocapitalize="none"></div>
+          <div><label for="ghFolder">Folder in the repo (optional)</label><input id="ghFolder" placeholder="whole repo" autocapitalize="none"></div>
+        </div>
+        <div style="margin-top:12px"><label for="ghToken">Access token</label>
+          <input id="ghToken" type="password" autocomplete="off" placeholder="github_pat_…">
+          <div class="muted" style="margin-top:4px">Use a fine-grained token with access to <b>only these repos</b> and <b>Contents: Read-only</b>. It is stored on your server and never shown again.</div></div>
+        <div class="row" style="margin-top:12px">
+          <label class="row" style="color:var(--text);font-size:14px;margin:0;cursor:pointer"><input type="checkbox" id="ghAuto" style="width:auto"> Install updates automatically</label>
+          <select id="ghInterval" style="width:auto">
+            <option value="15">every 15 minutes</option><option value="60">every hour</option>
+            <option value="360">every 6 hours</option><option value="1440">once a day</option>
+          </select>
+        </div>
+        <p class="muted" style="margin:6px 0 0">Automatic updates only replace apps that are already installed. New apps in the repo wait for you to add them.</p>
+        <div class="row" style="margin-top:14px"><button class="btn primary">Save</button>
+          <button type="button" class="btn small danger hidden" id="ghForget">Remove saved token</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Recent updates</h2>
+      <div id="ghLog"></div>
+    </div>
+  </section>
+
+  <!-- ACCOUNT (everyone) -->
+  <section id="tab-account" class="hidden">
+    <div class="card" style="max-width:460px">
+      <h2>Change password</h2>
+      <form id="pwForm">
+        <div style="margin-bottom:10px"><label for="pwCur">Current password</label><input id="pwCur" type="password" autocomplete="current-password" required></div>
+        <div style="margin-bottom:10px"><label for="pwNew">New password</label><input id="pwNew" type="password" autocomplete="new-password" minlength="8" required></div>
+        <button class="btn primary">Update password</button>
+      </form>
+    </div>
+    <div class="card" style="max-width:460px">
+      <h2>Your data</h2>
+      <p class="muted" style="margin:0">What you save in an app is stored on this server, privately for your account, and follows you to any device. Use the ⋯ menu on an app to export a backup copy.</p>
+    </div>
+  </section>
+</div>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+<input type="file" id="replaceFile" accept=".html,.htm,.zip" class="hidden">
+<input type="file" id="importFile" accept=".json,application/json" class="hidden">
+</body>
+</html>

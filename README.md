@@ -1,2 +1,188 @@
+<div align="center">
+
+<img src="static/favicon.svg" width="72" height="72" alt="PageVault logo">
+
 # PageVault
-A web dashboard for HTML files, has User logins and stores all data on NAS.
+
+**A private app portal for your own HTML apps, self-hosted on TrueNAS**
+
+![Version](https://img.shields.io/badge/version-2026--11--11%20mk1-2563eb)
+![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
+![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
+![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
+
+*by SeanwithanAI*
+
+</div>
+
+![The app launcher a family member sees after signing in](docs/screenshots/launcher.png)
+
+---
+
+## Overview
+
+PageVault turns single-file HTML apps (A Better Ledger, A Better PTO Tracker, A Better Maintenance Tracker…) into a private, multi-user web portal on your own server.
+
+- **You (admin)** upload apps or pull them from GitHub, give each one a name, logo and link, create accounts, and decide who can use what.
+- **Everyone else** signs in and picks from their apps. Whatever an app saves is stored **on your NAS**, separately for each person, and follows them to any device.
+
+It's one Python file and a `static/` folder, using only the Python standard library on the official `python:3.12-alpine` image. There's nothing to build and no third-party packages.
+
+## Screenshots
+
+| Manage apps (admin) | On a phone |
+|---|---|
+| ![Manage apps: each app with its logo, description, who can use it, version and link](docs/screenshots/manage-apps.png) | ![The launcher on a phone](docs/screenshots/phone.png) |
+
+![Updates tab: each app's installed version compared with the newest one in GitHub](docs/screenshots/updates.png)
+
+<sub>Screenshots use example accounts.</sub>
+
+## Features
+
+### For everyone
+- **App launcher.** A tile for each app they're allowed to use, with its logo and description. Works on phones, tablets and desktops.
+- **Their own data.** Each person's data in each app is private to them.
+- **Backups.** Each app's ⋯ menu lets a person **export, restore or erase** their own data.
+- **Own password.** New accounts must choose their own password at first sign-in.
+
+### For admins
+| Tab | What it does |
+|---|---|
+| **Manage apps** | Upload an `.html` file or a `.zip` of a whole site. Set the name, logo, description and link, and choose who can use it: selected people, everyone signed in, anyone with the link, or hidden while testing. Upload new versions without losing anyone's data. |
+| **People** | Add accounts with a temporary password, choose each person's apps, reset passwords, promote or demote admins, and turn self sign-up on or off (off by default). |
+| **Updates** | Watch one or more **private GitHub repos** and install new app versions automatically or with one tap. Roll back to any older version. Reminds you before the GitHub token expires. |
+| **Account** | Change your password. |
+
+### Built for reliable data
+- **The server is the only copy.** Browser storage (`localStorage`, IndexedDB, cookies, Cache Storage) is blocked inside apps. Apps that use `localStorage` work unchanged, because it's redirected to the server. Nothing is left in a browser to go out of sync.
+- **Conflict protection.** Every saved value has a version. A stale tab or device can't overwrite newer data; it's asked to reload instead.
+- **Saves on close.** Changes made right before a tab closes still reach the server.
+- **Attachments.** Apps can store files such as receipts and PDFs, up to 25 MB each.
+
+## Installation (TrueNAS SCALE 24.10+)
+
+This server uses three datasets, created with the **Apps** dataset preset:
+
+| Dataset | Holds |
+|---|---|
+| `Storage/Configs/PageVault/code` | This repository (`server.py`, `static/`) |
+| `Storage/Configs/PageVault/apps` | Uploaded HTML apps |
+| `Storage/Configs/PageVault/data` | Accounts and everyone's saved data. **Snapshot this one.** |
+
+1. **Put the code in place.** Download this repository into the `code` dataset; see [Updating PageVault](#updating-pagevault). The folder should contain `server.py` and `static/` directly.
+2. **Install the app.** Go to **Apps → Discover Apps → ⋮ → Install via YAML**, name it `pagevault`, and paste [`truenas-app.yaml`](truenas-app.yaml). The paths are already set for this server.
+3. **Open it.** Go to `http://<truenas-ip>:8090`. The first account created becomes the admin.
+4. **Connect GitHub.** In **Updates**, list the app repos, paste a read-only token, and click **Add as new app** on each.
+
+**If it won't start:** check **Apps → pagevault → Logs**. "Permission denied" means the `apps` user can't use a dataset. Fix it with **Datasets → Edit Permissions**.
+
+## Updating PageVault
+
+PageVault's own updates are released to this repository. Your NAS downloads them with `git`, using the same read-only token as the Updates tab. The token must include this repo with **Contents: Read-only**.
+
+**One-time setup** (TrueNAS shell, as root: **System → Shell**, then `sudo -i`):
+
+```sh
+cd /mnt/Storage/Configs/PageVault/code
+git init -b main
+git remote add origin https://x-access-token:YOUR_TOKEN@github.com/SeanwithanAI/PageVault.git
+git fetch origin main
+git reset --hard origin/main
+```
+
+**Each update:**
+
+```sh
+cd /mnt/Storage/Configs/PageVault/code && git pull
+```
+
+Then restart the app (**Apps → pagevault → Restart**). The new version number appears next to the PageVault logo for admins. Your apps and data live in other datasets and are never touched.
+
+**When the token is renewed:**
+
+```sh
+cd /mnt/Storage/Configs/PageVault/code
+git remote set-url origin https://x-access-token:NEW_TOKEN@github.com/SeanwithanAI/PageVault.git
+```
+
+## App updates from GitHub
+
+PageVault reads app names and versions from file names:
+
+```
+A-Better-PTO-Tracker-2026-11-11-mk3.html             →  A Better PTO Tracker · 2026-11-11 mk3
+A_Better_Ledger_2026-11-11_mk6_by_SeanwithanAI.html   →  A Better Ledger · 2026-11-11 mk6
+```
+
+Each new version is a new file in the app's repo. The newest date and mk number wins. Updates keep the app's link, name, logo, access and everyone's data. With **Install updates automatically** on, PageVault checks on the schedule you choose.
+
+## Writing apps for PageVault
+
+- **Paths:** use relative paths (`assets/app.js`, not `/assets/app.js`).
+- **Saving data:** `localStorage` is saved to the server automatically; nothing else is needed. `sessionStorage` works but isn't saved.
+- **Extra API:** `window.PageStore` is available for more control.
+
+```js
+PageStore.setJSON("trips", list);              // save any JSON value
+const list = PageStore.getJSON("trips", []);   // read it back
+await PageStore.flush();                       // wait until it's on the server
+PageStore.pending / PageStore.conflicted       // save status
+const f = await PageStore.files.put(file);     // store an attachment
+img.src = PageStore.files.url(f.id);           // show it
+PageStore.user                                 // signed-in username
+PageStore.persistent                           // false for signed-out visitors
+```
+
+## Configuration
+
+Set in the `environment:` section of `truenas-app.yaml`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MAX_UPLOAD_MB` | 100 | Largest app upload |
+| `STORE_QUOTA_MB` | 200 | Saved data and files allowed per person |
+| `MAX_VALUE_MB` | 10 | Largest single saved value |
+| `MAX_FILE_MB` | 25 | Largest attachment |
+| `MAX_IMAGE_MB` | 5 | Largest app logo |
+| `SESSION_DAYS` | 30 | How long a sign-in lasts |
+| `VIEW_TOKEN_HOURS` | 24 | How long an open app keeps saving before it needs a reload |
+| `COOKIE_SECURE` | 0 | Set to `1` when served over HTTPS |
+
+**Remote access:** PageVault speaks plain HTTP. For access away from home, use Tailscale, a Cloudflare Tunnel or a reverse proxy with HTTPS, and set `COOKIE_SECURE: "1"`. Don't expose the port directly to the internet.
+
+## Security
+
+- Every app runs in a **browser sandbox with its own isolated origin**. Apps can't read the sign-in cookie, call admin functions, or touch another app's or person's data.
+- Passwords are hashed with **scrypt**. Sign-in is rate-limited, admin actions are protected against cross-site requests, and admin checks are enforced on the server.
+- Zip uploads are checked for unsafe paths and zip bombs. Logos and attachments are type-checked and served sandboxed.
+- The GitHub token is stored only in the `data` dataset and is never sent to browsers.
+
+## Backups
+
+Snapshot the **`data`** dataset; it holds `pagevault.db`, `secret.key` and attachments. Snapshot **`apps`** too, or simply re-install apps from GitHub. People can also export their own data from each app's ⋯ menu.
+
+## Project structure
+
+```
+server.py            the whole server (Python standard library)
+static/
+  app.html, app.js   dashboard: launcher, Manage apps, People, Updates, Account
+  login.html/.js     sign-in, first-run admin setup
+  sdk.js             injected into every app: server storage, files, conflict protection
+  style.css          styles (light and dark)
+  favicon.svg        logo
+truenas-app.yaml     TrueNAS "Install via YAML" definition
+Dockerfile           optional: build a self-contained image instead
+docs/screenshots/    README images
+```
+
+## Changelog
+
+| Version | Notes |
+|---|---|
+| **2026-11-11 mk1** | First release. App launcher, admin portal (apps, people, logos, access), per-person server storage with conflict protection, attachments, GitHub updates for apps across several repos, token expiry reminders, forced password change at first sign-in. |
+
+---
+
+<div align="center"><sub>PageVault · by SeanwithanAI · private repository</sub></div>

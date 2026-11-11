@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · PageVault</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/login.js" defer></script>
+</head>
+<body>
+<div class="auth">
+  <div class="brand"><img src="/static/favicon.svg" alt="" width="30" height="30"> PageVault</div>
+  <div class="card">
+    <h2 id="heading">Sign in</h2>
+    <p id="intro" class="muted hidden"></p>
+    <form id="form">
+      <div><label for="username">Username</label><input id="username" autocomplete="username" autocapitalize="none" required></div>
+      <div><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required></div>
+      <div id="confirmRow" class="hidden"><label for="confirm">Confirm password</label><input id="confirm" type="password" autocomplete="new-password"></div>
+      <div class="err" id="err"></div>
+      <button class="btn primary" style="width:100%" id="submit">Sign in</button>
+    </form>
+    <p class="muted" style="text-align:center;margin:14px 0 0" id="switchRow"></p>
+  </div>
+</div>
+</body>
+</html>
