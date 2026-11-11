@@ -1,0 +1,31 @@
+# PageVault for TrueNAS SCALE (24.10 or newer)
+# Apps -> Discover Apps -> ⋮ (top right) -> Install via YAML -> paste this file.
+#
+# Paths are set for this server:  Storage/Configs/PageVault/{code,apps,data}
+# To use other datasets, change the LEFT side of each "volumes" line only.
+services:
+  pagevault:
+    image: python:3.12-alpine          # official Python image; no custom build needed
+    command: ["python", "-u", "/app/server.py"]
+    user: "568:568"                    # TrueNAS built-in "apps" user
+    restart: unless-stopped
+    ports:
+      - "8090:8080"                    # open http://<truenas-ip>:8090
+    environment:
+      DATA_DIR: /data                  # accounts + everyone's saved app data
+      APPS_DIR: /apps                  # the HTML apps you upload
+      PORT: "8080"
+      TZ: America/Chicago
+      MAX_UPLOAD_MB: "100"             # largest app upload
+      STORE_QUOTA_MB: "200"            # saved data allowed per person
+      COOKIE_SECURE: "0"               # set to "1" if you serve it over HTTPS
+    volumes:
+      # <dataset path on TrueNAS>:<path inside the app>   (no spaces)
+      - /mnt/Storage/Configs/PageVault/code:/app:ro    # this repository (server.py + static/)
+      - /mnt/Storage/Configs/PageVault/apps:/apps      # uploaded HTML apps
+      - /mnt/Storage/Configs/PageVault/data:/data      # accounts + saved data — snapshot this
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
