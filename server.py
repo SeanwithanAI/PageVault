@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-11 mk5"   # bump with every update: date of the update, mk2/mk3... for more that day
+VERSION = "2026-11-12"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -462,13 +462,13 @@ def parse_version(filename):
     m = VERSION_RE.search(stem)
     if not m:
         return "", ("", 0)
-    mk = int(m.group(2) or 1)
+    mk = int(m.group(2)) if m.group(2) else 0   # plain date = first release of the day, then mk1, mk2...
     return m.group(1) + (" mk%d" % mk if m.group(2) else ""), (m.group(1), mk)
 
 
 def version_key(label):
     m = re.match(r"(\d{4}-\d{2}-\d{2})(?: mk(\d+))?$", label or "")
-    return (m.group(1), int(m.group(2) or 1)) if m else ("", 0)
+    return (m.group(1), int(m.group(2)) if m.group(2) else 0) if m else ("", 0)
 
 
 def gh_config(conn):
