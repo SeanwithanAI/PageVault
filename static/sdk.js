@@ -88,7 +88,19 @@
           }
           if (r.status === 401) { halted = true; banner("Your session expired. Tap to reload and keep saving.", true); return; }
           if (r.status === 413) { banner("Storage is full; your latest change was not saved.", true); return; }
-          if (!r.ok) throw new Error("HTTP " + r.status);
+          if (r.status === 403) {
+            inflight = false; halted = true;
+            banner("PageVault won't accept saves from this page (no access, or your password needs changing). Tap to reload.", true);
+            return;
+          }
+          if (!r.ok) {
+            // the server answered but refused: read its reason so the message can say what went wrong
+            return r.text().then(function (t) {
+              var why = ""; try { why = JSON.parse(t).error || ""; } catch (e) { why = (t || "").slice(0, 120); }
+              var err = new Error("server error " + r.status + (why ? ": " + why : ""));
+              err.server = true; throw err;
+            });
+          }
           inflight = false;
           return r.json().then(function (res) {
             if (batch.clear) vers = Object.create(null);
@@ -97,10 +109,17 @@
             retryDelay = 2000; banner(null);
           });
         })
-        .catch(function () {
+        .catch(function (e) {
           inflight = false;
           requeue(batch);
-          banner("Can't reach the server - your changes will be saved when it's back. Don't close this tab yet.", false);
+          try { console.warn("PageVault save failed:", e); } catch (x) {}
+          if (e && e.server) {
+            banner("The server couldn't save your change (" + e.message.replace(/^server /, "") + "). " +
+                   "It's kept in this tab and will be retried. Don't close this tab yet.", false);
+          } else {
+            banner("Can't reach the server (no connection" + (e && e.message ? ": " + e.message : "") + "). " +
+                   "Your changes will be saved when it's back. Don't close this tab yet.", false);
+          }
           schedule(retryDelay); retryDelay = Math.min(retryDelay * 2, 60000);
         });
     });

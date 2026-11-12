@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS**
 
-![Version](https://img.shields.io/badge/version-2026--11--11%20mk2-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--11%20mk3-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
@@ -195,6 +195,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-11 mk3** | Save problems now say what went wrong: *"The server couldn't save your change (error 500: …)"* when the server refuses, *"Can't reach the server (no connection …)"* when the request never arrives, and a separate message when access is refused. Details are also written to the browser console. |
 | **2026-11-11 mk2** | Fix: apps could get stuck showing *"Can't reach the server"* (seen in Brave/Chrome on phones) when a save contained characters like "–" or emoji. The size limit for saves made while a tab closes is now measured in bytes, and if the browser refuses one it's resent normally. |
 | **2026-11-11 mk1** | First release. App launcher, admin portal (apps, people, logos, access), per-person server storage with conflict protection, attachments, GitHub updates for apps across several repos, token expiry reminders, forced password change at first sign-in. |
 
