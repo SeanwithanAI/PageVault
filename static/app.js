@@ -539,7 +539,7 @@
     me = d.user;
     $("who").textContent = me.username;
     var brand = document.querySelector(".brand");
-    if (brand && d.version && me.is_admin) { var v = document.createElement("span"); v.className = "chip"; v.title = "PageVault version"; v.textContent = d.version; brand.appendChild(v); }
+    if (brand && d.version) { var v = document.createElement("span"); v.className = "chip"; v.title = "PageVault version"; v.textContent = d.version; brand.appendChild(v); }
     if (me.must_change) {
       $("tabs").classList.add("hidden");
       $("tab-apps").classList.add("hidden");

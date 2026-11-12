@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS**
 
-![Version](https://img.shields.io/badge/version-2026--11--11%20mk4-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--11%20mk5-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
@@ -112,7 +112,7 @@ git branch --set-upstream-to=origin/main main
 cd /mnt/Storage/Configs/PageVault/code && git pull
 ```
 
-Then restart the app (**Apps → pagevault → Restart**). The new version number appears next to the PageVault logo for admins. Your apps and data live in other datasets and are never touched.
+Then restart the app (**Apps → pagevault → Restart**). The new version number appears next to the PageVault name on the home screen. Your apps and data live in other datasets and are never touched.
 
 **When the token is renewed:**
 
@@ -196,6 +196,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-11 mk5** | The PageVault version is now shown to everyone (next to the PageVault name on the home screen), not just admins. |
 | **2026-11-11 mk4** | Fix for **Brave on iPhone**: its blocker refuses requests from inside apps (*"WKWebView API client did not respond to this postMessage"*), so nothing saved. Apps now fall back to a background form submission when that happens, with the same conflict protection, attachments and error messages. Other browsers are unchanged. |
 | **2026-11-11 mk3** | Save problems now say what went wrong: *"The server couldn't save your change (error 500: …)"* when the server refuses, *"Can't reach the server (no connection …)"* when the request never arrives, and a separate message when access is refused. Details are also written to the browser console. |
 | **2026-11-11 mk2** | Fix: apps could get stuck showing *"Can't reach the server"* (seen in Brave/Chrome on phones) when a save contained characters like "–" or emoji. The size limit for saves made while a tab closes is now measured in bytes, and if the browser refuses one it's resent normally. |
