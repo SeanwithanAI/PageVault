@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS**
 
-![Version](https://img.shields.io/badge/version-2026--11--11%20mk5-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--12-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
@@ -128,9 +128,10 @@ PageVault reads app names and versions from file names:
 ```
 A-Better-PTO-Tracker-2026-11-11-mk3.html             →  A Better PTO Tracker · 2026-11-11 mk3
 A_Better_Ledger_2026-11-11_mk6_by_SeanwithanAI.html   →  A Better Ledger · 2026-11-11 mk6
+A_Better_Ledger_2026-11-12_by_SeanwithanAI.html       →  A Better Ledger · 2026-11-12
 ```
 
-Each new version is a new file in the app's repo. The newest date and mk number wins. Updates keep the app's link, name, logo, access and everyone's data. With **Install updates automatically** on, PageVault checks on the schedule you choose.
+Each new version is a new file in the app's repo. The newest date wins; on the same day, `mk1` is newer than the plain date, `mk2` newer than `mk1`, and so on. Updates keep the app's link, name, logo, access and everyone's data. With **Install updates automatically** on, PageVault checks on the schedule you choose.
 
 ## Writing apps for PageVault
 
@@ -196,6 +197,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-12** | Version numbering: the first release of a day is just the date, then `mk1`, `mk2`… for later releases that day. PageVault now sorts these correctly (a plain date comes before that day's `mk1`). |
 | **2026-11-11 mk5** | The PageVault version is now shown to everyone (next to the PageVault name on the home screen), not just admins. |
 | **2026-11-11 mk4** | Fix for **Brave on iPhone**: its blocker refuses requests from inside apps (*"WKWebView API client did not respond to this postMessage"*), so nothing saved. Apps now fall back to a background form submission when that happens, with the same conflict protection, attachments and error messages. Other browsers are unchanged. |
 | **2026-11-11 mk3** | Save problems now say what went wrong: *"The server couldn't save your change (error 500: …)"* when the server refuses, *"Can't reach the server (no connection …)"* when the request never arrives, and a separate message when access is refused. Details are also written to the browser console. |
