@@ -41,12 +41,68 @@
   // 64 KB, counted in BYTES. Characters like "–" or emoji take 2-4 bytes each, so measure bytes.
   var KEEPALIVE_MAX = 48 * 1024;
   function byteSize(str) { try { return new Blob([str]).size; } catch (e) { return str.length * 3; } }
+  // ---- Form fallback -------------------------------------------------------------------
+  // Some browsers block fetch() from inside PageVault's sandboxed apps. Brave on iPhone does:
+  // its blocker never answers ("WKWebView API client did not respond to this postMessage").
+  // A normal form submission into a hidden frame isn't affected, and the server replies with
+  // a tiny page that hands the answer back to us with postMessage.
+  var useForms = false, formSeq = 0, formWaiters = {};
+  window.addEventListener("message", function (e) {
+    var d = e.data;
+    if (!d || typeof d.pvForm !== "string" || !formWaiters[d.pvForm]) return;
+    formWaiters[d.pvForm](e, d);
+  });
+  function formSend(url, fields, file, fileName) {
+    return new Promise(function (resolve, reject) {
+      var id = "f" + (++formSeq) + "_" + Date.now().toString(36);
+      var frame = document.createElement("iframe");
+      frame.name = "pvform_" + id;
+      frame.setAttribute("aria-hidden", "true"); frame.tabIndex = -1;
+      frame.style.cssText = "position:absolute;width:0;height:0;border:0;visibility:hidden";
+      var form = document.createElement("form");
+      form.method = "POST"; form.enctype = "multipart/form-data"; form.acceptCharset = "utf-8";
+      form.target = frame.name; form.style.display = "none";
+      form.action = url + (url.indexOf("?") < 0 ? "?" : "&") + "via=form&rid=" + id;
+      Object.keys(fields || {}).forEach(function (k) {
+        var t = document.createElement("textarea"); t.name = k; t.value = fields[k]; form.appendChild(t);
+      });
+      if (file) {
+        var input = document.createElement("input"); input.type = "file"; input.name = "file";
+        var dt = new DataTransfer();
+        dt.items.add(file instanceof File ? file : new File([file], fileName || "file", { type: file.type || "application/octet-stream" }));
+        input.files = dt.files; form.appendChild(input);
+      }
+      var host = document.body || document.documentElement;
+      host.appendChild(frame); host.appendChild(form);
+      function cleanup() { delete formWaiters[id]; setTimeout(function () { frame.remove(); form.remove(); }, 0); }
+      var timeout = setTimeout(function () { cleanup(); reject(new Error("no answer from the server")); }, 15000);
+      formWaiters[id] = function (e, d) {
+        if (e.source !== frame.contentWindow) return;      // only our own hidden frame may answer
+        clearTimeout(timeout); cleanup();
+        resolve({ status: d.status, ok: d.status >= 200 && d.status < 300,
+                  json: function () { return Promise.resolve(d.body); },
+                  text: function () { return Promise.resolve(JSON.stringify(d.body)); } });
+      };
+      form.submit();
+    });
+  }
+  // Try fetch first; if the browser refuses it, switch to the form fallback for the rest of this visit.
+  function send(url, opts, fields, file, fileName) {
+    if (useForms) return formSend(url, fields, file, fileName);
+    return fetch(url, opts).catch(function (err) {
+      try { console.warn("PageVault: fetch() was refused (" + (err && err.message) + "); using the form fallback."); } catch (x) {}
+      useForms = true;
+      return formSend(url, fields, file, fileName);
+    });
+  }
   function post(body, keepalive) {
     var opts = { method: "POST", headers: { "Content-Type": "text/plain" }, body: body };
-    if (!keepalive) return fetch(cfg.store, opts);
-    opts.keepalive = true;
-    // if the browser refuses the keepalive request for any reason, send it the normal way
-    return fetch(cfg.store, opts).catch(function () { delete opts.keepalive; return fetch(cfg.store, opts); });
+    if (keepalive && !useForms) {
+      opts.keepalive = true;
+      // if the browser refuses the keepalive request, try again without it (then the form fallback)
+      return fetch(cfg.store, opts).catch(function () { delete opts.keepalive; return send(cfg.store, opts, { pv_body: body }); });
+    }
+    return send(cfg.store, opts, { pv_body: body });
   }
   function pending() {
     return clearAll || Object.keys(dirty).length > 0 || Object.keys(removed).length > 0;
@@ -197,9 +253,10 @@
       files: {
         put: function (blob, name) {
           if (!cfg.persist) return Promise.reject(new Error("Sign in to save files."));
-          return fetch(cfg.files, { method: "POST", body: blob, headers: {
+          var fname = name || blob.name || "file";
+          return send(cfg.files, { method: "POST", body: blob, headers: {
             "Content-Type": blob.type || "application/octet-stream",
-            "X-Filename": encodeURIComponent(name || blob.name || "file") } })
+            "X-Filename": encodeURIComponent(fname) } }, {}, blob, fname)
             .then(function (r) {
               if (r.status === 413) throw new Error("That file is too big, or your storage is full.");
               if (!r.ok) throw new Error("Couldn't save the file (HTTP " + r.status + ").");
@@ -209,7 +266,9 @@
         url: function (id) { return cfg.persist ? cfg.files + "/" + encodeURIComponent(id) : null; },
         remove: function (id) {
           if (!cfg.persist) return Promise.resolve();
-          return fetch(cfg.files + "/" + encodeURIComponent(id), { method: "DELETE" }).then(function () {});
+          var u = cfg.files + "/" + encodeURIComponent(id), viaForm = function () { return formSend(u + "?_method=DELETE", {}, null); };
+          var p = useForms ? viaForm() : fetch(u, { method: "DELETE" }).catch(function () { useForms = true; return viaForm(); });
+          return p.then(function () {}, function () {});
         }
       },
       user: cfg.user || null,
