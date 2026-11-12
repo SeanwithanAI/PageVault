@@ -103,6 +103,7 @@ git init -b main
 git remote add origin https://x-access-token:YOUR_TOKEN@github.com/SeanwithanAI/PageVault.git
 git fetch origin main
 git reset --hard origin/main
+git branch --set-upstream-to=origin/main main
 ```
 
 **Each update:**
