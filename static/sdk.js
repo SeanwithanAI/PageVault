@@ -37,6 +37,17 @@
   var dirty = Object.create(null), removed = Object.create(null), clearAll = false;
   var timer = null, retryDelay = 2000, chain = Promise.resolve(), halted = false, inflight = false;
 
+  // Browsers only let a "keepalive" request (one that can finish after the tab closes) carry about
+  // 64 KB, counted in BYTES. Characters like "–" or emoji take 2-4 bytes each, so measure bytes.
+  var KEEPALIVE_MAX = 48 * 1024;
+  function byteSize(str) { try { return new Blob([str]).size; } catch (e) { return str.length * 3; } }
+  function post(body, keepalive) {
+    var opts = { method: "POST", headers: { "Content-Type": "text/plain" }, body: body };
+    if (!keepalive) return fetch(cfg.store, opts);
+    opts.keepalive = true;
+    // if the browser refuses the keepalive request for any reason, send it the normal way
+    return fetch(cfg.store, opts).catch(function () { delete opts.keepalive; return fetch(cfg.store, opts); });
+  }
   function pending() {
     return clearAll || Object.keys(dirty).length > 0 || Object.keys(removed).length > 0;
   }
@@ -66,8 +77,7 @@
       var batch = takeBatch();
       var body = JSON.stringify(batch);
       inflight = true;
-      // keepalive lets the save finish even if the tab is closing (browsers allow it for small bodies)
-      return fetch(cfg.store, { method: "POST", headers: { "Content-Type": "text/plain" }, body: body, keepalive: body.length < 60000 })
+      return post(body, byteSize(body) < KEEPALIVE_MAX)
         .then(function (r) {
           if (r.status === 409 || r.status === 401 || r.status === 413) inflight = false;
           if (r.status === 409) {
@@ -126,7 +136,7 @@
     var body = JSON.stringify(takeBatch());
     try {
       if (!(navigator.sendBeacon && navigator.sendBeacon(cfg.store, new Blob([body], { type: "text/plain" })))) {
-        fetch(cfg.store, { method: "POST", body: body, keepalive: true, headers: { "Content-Type": "text/plain" } });
+        post(body, byteSize(body) < KEEPALIVE_MAX);
       }
     } catch (e) { /* best effort */ }
   }
