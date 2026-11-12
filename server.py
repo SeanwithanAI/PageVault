@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-11 mk3"   # bump with every update: date of the update, mk2/mk3... for more that day
+VERSION = "2026-11-11 mk4"   # bump with every update: date of the update, mk2/mk3... for more that day
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -222,6 +222,34 @@ def sniff_image(b):
     if head.startswith((b"<?xml", b"<svg", b"<!--")) and b"<svg" in head:
         return "svg"
     return None
+
+
+def parse_multipart(ctype, body):
+    """Minimal, binary-safe multipart/form-data parser -> (fields, files)."""
+    m = re.search(r'boundary="?([^";]+)"?', ctype or "")
+    if not m:
+        raise HTTPError(400, "bad form")
+    sep = b"--" + m.group(1).encode()
+    fields, files = {}, {}
+    for chunk in body.split(sep)[1:]:
+        if chunk.startswith(b"--"):
+            break
+        if chunk.startswith(b"\r\n"):
+            chunk = chunk[2:]
+        head, _, data = chunk.partition(b"\r\n\r\n")
+        if data.endswith(b"\r\n"):
+            data = data[:-2]
+        h = head.decode("utf-8", "replace")
+        name = re.search(r'(?<![a-z])name="([^"]*)"', h)
+        if not name:
+            continue
+        fn = re.search(r'filename="([^"]*)"', h)
+        ct = re.search(r'(?im)^content-type:\s*([^\r\n;]+)', h)
+        if fn:
+            files[name.group(1)] = (fn.group(1), (ct.group(1).strip() if ct else "application/octet-stream"), data)
+        else:
+            fields[name.group(1)] = data.decode("utf-8", "replace")
+    return fields, files
 
 
 def usage(conn, uid, pid=None):
@@ -697,6 +725,7 @@ class Handler(BaseHTTPRequestHandler):
     def dispatch(self, method):
         self.extra_headers = {}
         self.conn = None
+        self.form_rid = None
         try:
             u = urllib.parse.urlsplit(self.path)
             self.query = u.query
@@ -730,7 +759,20 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def send_json(self, obj, code=200, headers=None):
+        rid = getattr(self, "form_rid", None)
+        if rid:  # request came from the form fallback: hand the answer to the app with postMessage
+            page = ('<!doctype html><meta charset="utf-8"><script>parent.postMessage({pvForm:%s,status:%d,body:%s},"*")</script>'
+                    % (json.dumps(rid), code, json.dumps(obj).replace("<", "\\u003c"))).encode()
+            return self.respond(200, page, "text/html; charset=utf-8",
+                                {"Content-Security-Policy": "sandbox allow-scripts", "Cache-Control": "no-store"})
         self.respond(code, json.dumps(obj).encode(), "application/json", headers)
+
+    def form_mode(self):
+        """Set up the form fallback (used when a browser blocks fetch(), e.g. Brave on iPhone)."""
+        self.form_rid = None
+        if self.q("via") == "form" and re.fullmatch(r"[A-Za-z0-9_]{1,48}", self.q("rid") or ""):
+            self.form_rid = self.q("rid")
+        return self.form_rid
 
     def redirect(self, location, code=302):
         self.respond(code, b"", headers={"Location": location, "Cache-Control": "no-store"})
@@ -904,8 +946,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.redirect(path + "/")
         rel = rest[1:]
         if rel == "__store__" or rel.startswith("__store__/"):
+            self.form_mode()
             return self.route_store(method, tok, rel[len("__store__"):].lstrip("/"))
         if rel == "__files__" or rel.startswith("__files__/"):
+            if self.form_mode() and method == "POST" and self.q("_method") == "DELETE":
+                method = "DELETE"
             return self.route_files(method, tok, rel[len("__files__"):].lstrip("/"))
         if method not in ("GET", "HEAD"):
             raise HTTPError(405, "Method not allowed")
@@ -982,6 +1027,26 @@ class Handler(BaseHTTPRequestHandler):
         c = self.conn
         if fid and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", fid):
             raise HTTPError(404, "not found")
+        if method == "POST" and not fid and (self.headers.get("Content-Type") or "").startswith("multipart/form-data"):
+            _, files = parse_multipart(self.headers.get("Content-Type"), self.read_body(MAX_FILE + 65536))
+            if "file" not in files or not files["file"][2]:
+                raise HTTPError(400, "empty file")
+            name, ctype, data = files["file"]
+            if len(data) > MAX_FILE:
+                raise HTTPError(413, "file too large")
+            if usage(c, uid) + len(data) > STORE_QUOTA:
+                raise HTTPError(413, "storage quota exceeded")
+            fid = secrets.token_urlsafe(12)
+            name = (self.q("name") or name or "file")[:200]
+            ctype = (ctype or "application/octet-stream").lower()[:100]
+            dest = file_path(uid, pid, fid)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as f:
+                f.write(data)
+            c.execute("INSERT INTO page_files(id,user_id,page_id,name,type,size,created) VALUES(?,?,?,?,?,?,?)",
+                      (fid, uid, pid, name, ctype, len(data), now()))
+            c.commit()
+            return self.send_json({"id": fid, "name": name, "type": ctype, "size": len(data)})
         if method == "POST" and not fid:
             n = self.body_length(MAX_FILE)
             if not n:
@@ -1075,7 +1140,14 @@ class Handler(BaseHTTPRequestHandler):
         elif method == "DELETE":
             ops = {"remove": [key]} if key else {"clear": True}
         elif method == "POST" and not key:
-            ops = self.read_json(MAX_VALUE * 4)
+            if (self.headers.get("Content-Type") or "").startswith("multipart/form-data"):
+                fields, _ = parse_multipart(self.headers.get("Content-Type"), self.read_body(MAX_VALUE * 4))
+                try:
+                    ops = json.loads(fields.get("pv_body") or "{}")
+                except ValueError:
+                    raise HTTPError(400, "Invalid JSON")
+            else:
+                ops = self.read_json(MAX_VALUE * 4)
             if not isinstance(ops, dict):
                 raise HTTPError(400, "bad batch")
         else:
