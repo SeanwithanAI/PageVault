@@ -130,23 +130,235 @@
   };
 
   // ================= MY APPS (everyone)
+  // sort, arrange, favorite and hide are saved per person on the server (prefs), so they follow you to every device
+  var prefs = { sort: "custom", order: [], fav: [], hidden: [], units: "f", clock: "auto", weather: true };
+  var appList = [], arranging = false, showHidden = false, search = "", prefTimer = null;
+  var SORT_LBL = { custom: "My order", name: "Name (A–Z)", recent: "Recently opened", most: "Most opened" };
+  function savePrefs(now) {
+    clearTimeout(prefTimer);
+    var go = function () { api("/api/prefs", { method: "POST", json: prefs }).catch(fail); };
+    if (now) go(); else prefTimer = setTimeout(go, 400);
+  }
+  function has(list, id) { return list.indexOf(id) >= 0; }
+  function toggleIn(list, id) { var i = list.indexOf(id); if (i >= 0) list.splice(i, 1); else list.push(id); }
+  // apps in display order: favorites first, then by the chosen sort
+  function sortedApps() {
+    var pos = {}; prefs.order.forEach(function (id, i) { pos[id] = i; });
+    var cmp = {
+      custom: function (a, b) { var pa = a.id in pos ? pos[a.id] : 1e6, pb = b.id in pos ? pos[b.id] : 1e6; return pa - pb || a.title.localeCompare(b.title); },
+      name: function (a, b) { return a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" }); },
+      recent: function (a, b) { return (b.last_open || 0) - (a.last_open || 0) || a.title.localeCompare(b.title); },
+      most: function (a, b) { return (b.opens || 0) - (a.opens || 0) || (b.last_open || 0) - (a.last_open || 0) || a.title.localeCompare(b.title); }
+    }[arranging ? "custom" : prefs.sort];
+    return appList.slice().sort(function (a, b) {
+      var fa = has(prefs.fav, a.id) ? 0 : 1, fb = has(prefs.fav, b.id) ? 0 : 1;
+      return fa - fb || cmp(a, b);
+    });
+  }
+  function usageLine(a) {
+    if (prefs.sort === "recent" && a.last_open) return "Opened " + when(a.last_open);
+    if (prefs.sort === "most" && a.opens) return "Opened " + a.opens + " time" + (a.opens === 1 ? "" : "s");
+    return "";
+  }
+  function drawApps() {
+    var list = sortedApps(), q = search.trim().toLowerCase();
+    var hiddenCount = list.filter(function (a) { return has(prefs.hidden, a.id); }).length;
+    var shown = list.filter(function (a) {
+      if (has(prefs.hidden, a.id) && !showHidden && !arranging) return false;
+      return !q || (a.title + " " + (a.description || "")).toLowerCase().indexOf(q) >= 0;
+    });
+    $("appBar").classList.toggle("hidden", !appList.length);
+    $("appSort").value = arranging ? "custom" : prefs.sort; $("appSort").disabled = arranging;
+    $("appArrange").textContent = arranging ? "Done" : "Arrange";
+    $("appArrange").classList.toggle("primary", arranging);
+    $("tiles").classList.toggle("arranging", arranging);
+    $("arrangeHint").classList.toggle("hidden", !arranging);
+    $("hiddenToggle").classList.toggle("hidden", !hiddenCount || arranging);
+    $("hiddenToggle").textContent = showHidden ? "Hide hidden apps" : "Show hidden apps (" + hiddenCount + ")";
+    if (!appList.length) {
+      $("tiles").innerHTML = '<div class="card empty" style="grid-column:1/-1">' +
+        (me.is_admin ? "No apps yet. Go to <b>Manage apps</b> to upload your first one."
+                     : "You don't have any apps yet. Ask your administrator to give you access.") + "</div>";
+      return;
+    }
+    $("tiles").innerHTML = shown.length ? shown.map(function (a, i) {
+      var fav = has(prefs.fav, a.id), hid = has(prefs.hidden, a.id), u = usageLine(a);
+      return '<a class="tile' + (hid ? " is-hidden" : "") + '" href="' + esc(a.url) + '" data-id="' + a.id + '"' + (arranging ? ' draggable="false"' : "") + ">" +
+        (fav ? '<span class="favmark" title="Favorite" aria-label="Favorite">★</span>' : "") + appIcon(a, "icon") +
+        '<div class="name">' + esc(a.title) + "</div>" +
+        (a.description ? '<div class="desc">' + esc(a.description) + "</div>" : "") +
+        (u ? '<div class="used">' + esc(u) + "</div>" : "") +
+        (arranging
+          ? '<div class="arr" role="group" aria-label="Arrange ' + esc(a.title) + '">' +
+            '<button type="button" data-mv="-1" data-id="' + a.id + '" aria-label="Move ' + esc(a.title) + ' earlier"' + (i === 0 ? " disabled" : "") + '>‹</button>' +
+            '<span class="grip" data-grip="' + a.id + '" title="Drag to move" aria-hidden="true">⠿</span>' +
+            '<button type="button" data-mv="1" data-id="' + a.id + '" aria-label="Move ' + esc(a.title) + ' later"' + (i === shown.length - 1 ? " disabled" : "") + '>›</button>' +
+            '<button type="button" data-fav="' + a.id + '" class="' + (fav ? "on" : "") + '" aria-pressed="' + fav + '" title="' + (fav ? "Unpin from top" : "Pin to top") + '">★</button>' +
+            '<button type="button" data-hide="' + a.id + '" class="' + (hid ? "on" : "") + '" aria-pressed="' + hid + '" title="' + (hid ? "Show on my launcher" : "Hide from my launcher") + '">' + (hid ? "Show" : "Hide") + "</button></div>"
+          : '<button class="more" data-more="' + a.id + '" title="Options" aria-label="Options">⋯</button>') + "</a>";
+    }).join("") : '<div class="card empty" style="grid-column:1/-1">No apps match “' + esc(search) + "”.</div>";
+  }
+  // custom order = what's on screen now (so switching from A–Z to My order and arranging keeps your place)
+  function freezeOrder() { prefs.order = sortedApps().map(function (a) { return a.id; }); }
+  function moveApp(id, delta) {
+    freezeOrder();
+    var o = prefs.order, i = o.indexOf(id), j = i + delta;
+    if (i < 0 || j < 0 || j >= o.length) return;
+    // keep favorites and the rest in their own groups
+    if (has(prefs.fav, o[i]) !== has(prefs.fav, o[j])) return;
+    o.splice(j, 0, o.splice(i, 1)[0]);
+    drawApps(); savePrefs();
+    var b = document.querySelector('[data-mv="' + delta + '"][data-id="' + id + '"]'); if (b && !b.disabled) b.focus();
+  }
   function loadApps() {
     return api("/api/apps").then(function (d) {
       apps = {};
       d.apps.forEach(function (a) { apps[a.id] = a; });
-      $("tiles").innerHTML = d.apps.length ? d.apps.map(function (a) {
-        return '<a class="tile" href="' + esc(a.url) + '" data-id="' + a.id + '">' + appIcon(a, "icon") +
-          '<div class="name">' + esc(a.title) + "</div>" +
-          (a.description ? '<div class="desc">' + esc(a.description) + "</div>" : "") +
-          '<button class="more" data-more="' + a.id + '" title="Options" aria-label="Options">⋯</button></a>';
-      }).join("") : '<div class="card empty" style="grid-column:1/-1">' +
-        (me.is_admin ? "No apps yet. Go to <b>Manage apps</b> to upload your first one."
-                     : "You don't have any apps yet. Ask your administrator to give you access.") + "</div>";
+      appList = d.apps;
+      if (d.prefs) prefs = d.prefs;
+      drawApps();
       $("storage").textContent = d.storage.used ? "Your saved data: " + size(d.storage.used) + " of " + size(d.storage.quota) : "";
+      startClock();
     }).catch(fail);
+  }
+  $("appSort").onchange = function () {
+    if ($("appSort").value === "custom" && !prefs.order.length) { prefs.sort = "custom"; }
+    prefs.sort = $("appSort").value; drawApps(); savePrefs(true);
+  };
+  $("appArrange").onclick = function () {
+    arranging = !arranging;
+    if (arranging) { freezeOrder(); search = ""; $("appSearch").value = ""; }
+    else { prefs.sort = "custom"; savePrefs(true); toast("Saved. Sorting by My order"); }
+    drawApps();
+  };
+  $("appSearch").oninput = function () { search = $("appSearch").value; drawApps(); };
+  $("hiddenToggle").onclick = function () { showHidden = !showHidden; drawApps(); };
+
+  // arrange mode: buttons, and drag (mouse and touch) by the grip
+  $("tiles").addEventListener("click", function (e) {
+    if (!arranging) return;
+    var b = e.target.closest("button");
+    if (e.target.closest(".tile")) e.preventDefault();
+    if (!b) return;
+    e.stopPropagation();
+    var id;
+    if (b.dataset.mv) moveApp(+b.dataset.id, +b.dataset.mv);
+    else if ((id = b.dataset.fav)) { freezeOrder(); toggleIn(prefs.fav, +id); drawApps(); savePrefs(); }
+    else if ((id = b.dataset.hide)) { toggleIn(prefs.hidden, +id); drawApps(); savePrefs(); }
+  }, true);
+  var drag = null;
+  $("tiles").addEventListener("pointerdown", function (e) {
+    var g = e.target.closest("[data-grip]");
+    if (!arranging || !g) return;
+    e.preventDefault();
+    freezeOrder();
+    var tile = g.closest(".tile");
+    drag = { id: +g.dataset.grip, tile: tile, pid: e.pointerId };
+    tile.classList.add("dragging");
+    try { g.setPointerCapture(e.pointerId); } catch (x) {}
+  });
+  $("tiles").addEventListener("pointermove", function (e) {
+    if (!drag || e.pointerId !== drag.pid) return;
+    e.preventDefault();
+    var over = document.elementFromPoint(e.clientX, e.clientY), t = over && over.closest(".tile");
+    if (!t || t === drag.tile) return;
+    var to = +t.dataset.id, o = prefs.order, i = o.indexOf(drag.id), j = o.indexOf(to);
+    if (i < 0 || j < 0 || has(prefs.fav, drag.id) !== has(prefs.fav, to)) return;
+    o.splice(j, 0, o.splice(i, 1)[0]);
+    var before = j < i;
+    t.parentNode.insertBefore(drag.tile, before ? t : t.nextSibling);
+  });
+  function endDrag() {
+    if (!drag) return;
+    drag.tile.classList.remove("dragging");
+    drag = null; drawApps(); savePrefs();
+  }
+  $("tiles").addEventListener("pointerup", endDrag);
+  $("tiles").addEventListener("pointercancel", endDrag);
+
+  // ---------- date, time and today's weather (bottom of My apps)
+  var clockTimer = null, wxTimer = null, wxData = null;
+  var WX = { 0: ["Clear", "☀️", "🌙"], 1: ["Mostly clear", "🌤️", "🌙"], 2: ["Partly cloudy", "⛅", "☁️"], 3: ["Cloudy", "☁️", "☁️"],
+    45: ["Fog", "🌫️"], 48: ["Freezing fog", "🌫️"], 51: ["Light drizzle", "🌦️"], 53: ["Drizzle", "🌦️"], 55: ["Heavy drizzle", "🌧️"],
+    56: ["Freezing drizzle", "🌧️"], 57: ["Freezing drizzle", "🌧️"], 61: ["Light rain", "🌦️"], 63: ["Rain", "🌧️"], 65: ["Heavy rain", "🌧️"],
+    66: ["Freezing rain", "🌧️"], 67: ["Freezing rain", "🌧️"], 71: ["Light snow", "🌨️"], 73: ["Snow", "🌨️"], 75: ["Heavy snow", "❄️"],
+    77: ["Snow grains", "🌨️"], 80: ["Rain showers", "🌦️"], 81: ["Rain showers", "🌧️"], 82: ["Heavy showers", "⛈️"],
+    85: ["Snow showers", "🌨️"], 86: ["Heavy snow showers", "❄️"], 95: ["Thunderstorms", "⛈️"], 96: ["Thunderstorms, hail", "⛈️"], 99: ["Thunderstorms, hail", "⛈️"] };
+  function hour12() { return prefs.clock === "auto" ? undefined : prefs.clock === "12"; }
+  function drawClock() {
+    var d = new Date();
+    $("today").textContent = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    $("now").textContent = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: hour12() });
+  }
+  function startClock() {
+    drawClock();
+    if (!clockTimer) clockTimer = setInterval(drawClock, 15000);
+    loadWeather();
+  }
+  function round(n) { return n == null ? "–" : Math.round(n); }
+  function loadWeather(force) {
+    var box = $("wx");
+    if (prefs.weather === false) { box.innerHTML = '<button type="button" class="linkish" data-wxset>Show weather</button>'; return; }
+    if (!prefs.loc) { box.innerHTML = '<button type="button" class="btn small" data-wxset>☀️ Add your location for weather</button>'; return; }
+    if (wxData && !force && wxData.key === prefs.loc.lat + "," + prefs.loc.lon + prefs.units && Date.now() / 1000 - wxData.at < 900) return drawWeather();
+    box.innerHTML = '<span class="muted">Getting the weather…</span>';
+    api("/api/weather?lat=" + prefs.loc.lat + "&lon=" + prefs.loc.lon + "&units=" + prefs.units).then(function (w) {
+      w.key = prefs.loc.lat + "," + prefs.loc.lon + prefs.units; wxData = w; drawWeather();
+      clearTimeout(wxTimer); wxTimer = setTimeout(function () { loadWeather(true); }, 15 * 60 * 1000);
+    }).catch(function () {
+      box.innerHTML = '<span class="muted">Weather isn’t available right now.</span> <button type="button" class="linkish" data-wxset>Change</button>';
+    });
+  }
+  function drawWeather() {
+    var w = wxData, c = WX[w.code] || ["", "🌡️"], icon = (!w.day && c[2]) || c[1], u = w.units === "c" ? "°C" : "°F";
+    var t = function (iso) { return iso ? new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: hour12() }) : ""; };
+    $("wx").innerHTML = '<div class="wxmain"><span class="wxicon" aria-hidden="true">' + icon + '</span><span class="wxtemp">' + round(w.temp) + u + '</span>' +
+      '<span class="wxdesc"><b>' + esc(c[0]) + '</b><br><span class="muted">H ' + round(w.hi) + "° · L " + round(w.lo) + "°" + (w.rain != null ? " · " + w.rain + "% rain" : "") + "</span></span></div>" +
+      '<div class="wxmore muted">Feels like ' + round(w.feels) + "° · Wind " + round(w.wind) + (w.units === "c" ? " km/h" : " mph") +
+      (w.sunrise ? " · Sunrise " + t(w.sunrise) + " · Sunset " + t(w.sunset) : "") + "</div>" +
+      '<div class="wxloc muted">' + esc(prefs.loc.name || "Your location") + ' · <button type="button" class="linkish" data-wxset>Change</button></div>';
+  }
+  $("wx").addEventListener("click", function (e) { if (e.target.closest("[data-wxset]")) weatherSettings(); });
+  function weatherSettings() {
+    var secure = window.isSecureContext && navigator.geolocation;
+    openDialog("Weather and clock",
+      '<div><label for="wxQ">City or ZIP code</label><div class="row" style="flex-wrap:nowrap;gap:8px"><input id="wxQ" placeholder="e.g. Denver, CO or 80202" autocomplete="off" value="' + esc(prefs.loc ? prefs.loc.name : "") + '">' +
+      '<button type="button" class="btn" id="wxFind">Search</button></div><div class="wxres" id="wxRes"></div>' +
+      (secure ? '<button type="button" class="btn small" id="wxGeo" style="margin-top:8px">📍 Use my current location</button>' : '<p class="muted" style="font-size:13px;margin:6px 0 0">Your browser only shares your location over a secure (https) connection, so search for your city instead.</p>') + "</div>" +
+      '<div class="grid" style="grid-template-columns:1fr 1fr"><div><label for="wxU">Temperature</label><select id="wxU"><option value="f">°F</option><option value="c">°C</option></select></div>' +
+      '<div><label for="wxC">Clock</label><select id="wxC"><option value="auto">Automatic</option><option value="12">12-hour</option><option value="24">24-hour</option></select></div></div>' +
+      '<label class="chk"><input type="checkbox" id="wxOn"' + (prefs.weather !== false ? " checked" : "") + "> Show the weather</label>" +
+      '<p class="muted" style="font-size:12.5px;margin:8px 0 0">Weather from Open-Meteo, fetched by your PageVault server. Your location is saved only to your account.</p>',
+      "Save", function () {
+        prefs.units = $("wxU").value; prefs.clock = $("wxC").value; prefs.weather = $("wxOn").checked;
+        if (pick) prefs.loc = pick;
+        wxData = null; savePrefs(true); drawClock(); loadWeather(true);
+      });
+    $("wxU").value = prefs.units; $("wxC").value = prefs.clock;
+    var pick = null;
+    var choose = function (r) { pick = r; $("wxQ").value = r.name; $("wxRes").innerHTML = '<span class="ok">✓ ' + esc(r.name) + "</span>"; };
+    var find = function () {
+      var q = $("wxQ").value.trim(); if (!q) return;
+      $("wxRes").innerHTML = '<span class="muted">Searching…</span>';
+      api("/api/geocode?q=" + encodeURIComponent(q)).then(function (d) {
+        if (!d.results.length) { $("wxRes").innerHTML = '<span class="muted">No places found. Try the city name and state.</span>'; return; }
+        $("wxRes").innerHTML = d.results.map(function (r, i) { return '<button type="button" class="btn small" data-r="' + i + '">' + esc(r.name) + "</button>"; }).join("");
+        $("wxRes").querySelectorAll("[data-r]").forEach(function (b) { b.onclick = function () { choose(d.results[+b.dataset.r]); }; });
+        if (d.results.length === 1) choose(d.results[0]);
+      }).catch(function (e) { $("wxRes").innerHTML = '<span class="err">' + esc(e.message) + "</span>"; });
+    };
+    $("wxFind").onclick = find;
+    $("wxQ").onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); find(); } };
+    if ($("wxGeo")) $("wxGeo").onclick = function () {
+      $("wxRes").innerHTML = '<span class="muted">Finding you…</span>';
+      navigator.geolocation.getCurrentPosition(function (p) {
+        choose({ name: "My location", lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4) });
+      }, function () { $("wxRes").innerHTML = '<span class="muted">Location wasn’t shared. Search for your city instead.</span>'; }, { timeout: 10000 });
+    };
   }
 
   $("tiles").addEventListener("click", function (e) {
+    if (arranging) return;
     var b = e.target.closest("[data-more]");
     if (!b) return;
     e.preventDefault();

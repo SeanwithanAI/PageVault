@@ -39,7 +39,20 @@
 
   <!-- MY APPS (everyone) -->
   <section id="tab-apps">
+    <div class="appbar hidden" id="appBar">
+      <input type="search" id="appSearch" placeholder="Search apps" aria-label="Search apps" autocomplete="off">
+      <label class="sortlbl"><span>Sort</span><select id="appSort" aria-label="Sort apps">
+        <option value="custom">My order</option><option value="name">Name (A–Z)</option>
+        <option value="recent">Recently opened</option><option value="most">Most opened</option></select></label>
+      <button type="button" class="btn" id="appArrange">Arrange</button>
+    </div>
+    <p class="muted arrhint hidden" id="arrangeHint">Drag <b>⠿</b> or use <b>‹ ›</b> to move apps. <b>★</b> pins an app to the top, <b>Hide</b> takes it off your launcher. Tap <b>Done</b> when you’re finished.</p>
     <div class="tiles" id="tiles"></div>
+    <p style="text-align:center;margin:12px 0 0"><button type="button" class="linkish hidden" id="hiddenToggle"></button></p>
+    <div class="nowbar" id="nowBar">
+      <div class="clock"><div class="now" id="now"></div><div class="today muted" id="today"></div></div>
+      <div class="wx" id="wx" aria-live="polite"></div>
+    </div>
     <p class="muted" id="storage" style="text-align:center;margin-top:18px"></p>
   </section>
 
