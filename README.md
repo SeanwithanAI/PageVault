@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS**
 
-![Version](https://img.shields.io/badge/version-2026--11--12-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--13-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
@@ -42,6 +42,8 @@ It's one Python file and a `static/` folder, using only the Python standard libr
 
 ### For everyone
 - **App launcher.** A tile for each app they're allowed to use, with its logo and description. Works on phones, tablets and desktops.
+- **Sort and arrange.** Each person can search their apps, sort them (*My order*, *Name A–Z*, *Recently opened*, *Most opened*), and tap **Arrange** to drag apps into their own order (or move them with ‹ ›), pin favorites to the top with ★, and hide apps they don't use. It's saved to their account, so it's the same on every device.
+- **Date, time and weather.** The bottom of the launcher shows the date, a live clock and today's weather: temperature, conditions, high/low, chance of rain, wind and sunrise/sunset. Each person sets their own city or ZIP code (°F/°C and a 12/24-hour clock too). The server fetches the weather from [Open-Meteo](https://open-meteo.com) (free, no key) and caches it for 15 minutes, so the TrueNAS app needs internet access, which it already uses for GitHub updates.
 - **Their own data.** Each person's data in each app is private to them.
 - **Backups.** Each app's ⋯ menu lets a person **export, restore or erase** their own data.
 - **Own password.** New accounts must choose their own password at first sign-in.
@@ -173,6 +175,7 @@ Set in the `environment:` section of `truenas-app.yaml`:
 - Passwords are hashed with **scrypt**. Sign-in is rate-limited, admin actions are protected against cross-site requests, and admin checks are enforced on the server.
 - Zip uploads are checked for unsafe paths and zip bombs. Logos and attachments are type-checked and served sandboxed.
 - The GitHub token is stored only in the `data` dataset and is never sent to browsers.
+- Weather lookups go from the server to Open-Meteo with only the rounded coordinates of the place a person picked. A person's location is saved only in their own launcher settings, and browsers never contact the weather service directly.
 
 ## Backups
 
@@ -197,6 +200,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-13** | Launcher: search, sort (My order, Name A–Z, Recently opened, Most opened), **Arrange** mode (drag or ‹ › to reorder, ★ to pin to the top, Hide/Show), saved per person on the server. New date, time and weather bar at the bottom (Open-Meteo, set by city or ZIP, °F/°C, 12/24-hour). New tables `user_prefs` and `app_usage` are added automatically. |
 | **2026-11-12** | Version numbering: the first release of a day is just the date, then `mk1`, `mk2`… for later releases that day. PageVault now sorts these correctly (a plain date comes before that day's `mk1`). |
 | **2026-11-11 mk5** | The PageVault version is now shown to everyone (next to the PageVault name on the home screen), not just admins. |
 | **2026-11-11 mk4** | Fix for **Brave on iPhone**: its blocker refuses requests from inside apps (*"WKWebView API client did not respond to this postMessage"*), so nothing saved. Apps now fall back to a background form submission when that happens, with the same conflict protection, attachments and error messages. Other browsers are unchanged. |

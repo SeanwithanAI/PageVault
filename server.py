@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-12"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-13"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -110,6 +110,13 @@ CREATE TABLE IF NOT EXISTS page_files(
   id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
   name TEXT NOT NULL, type TEXT NOT NULL, size INTEGER NOT NULL, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS user_prefs(
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS app_usage(
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  opens INTEGER NOT NULL DEFAULT 0, last INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(user_id, page_id));
 CREATE TABLE IF NOT EXISTS update_log(
   id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, page_id INTEGER, title TEXT NOT NULL,
   version TEXT NOT NULL, path TEXT NOT NULL, how TEXT NOT NULL);
@@ -693,6 +700,92 @@ LOGIN_FAILS = {}
 LOGIN_LOCK = threading.Lock()
 
 
+# ---------------------------------------------------------------- launcher: per-person prefs + weather
+SORTS = ("custom", "name", "recent", "most")
+
+
+def clean_prefs(d):
+    """Only the launcher settings we know about, with sane types and sizes."""
+    d = d if isinstance(d, dict) else {}
+    ids = lambda v: [int(x) for x in (v if isinstance(v, list) else []) if str(x).isdigit()][:500]
+    out = {"sort": d.get("sort") if d.get("sort") in SORTS else "custom",
+           "order": ids(d.get("order")), "fav": ids(d.get("fav")), "hidden": ids(d.get("hidden")),
+           "units": "c" if d.get("units") == "c" else "f",
+           "clock": d.get("clock") if d.get("clock") in ("12", "24") else "auto",
+           "weather": d.get("weather") is not False}
+    loc = d.get("loc")
+    if isinstance(loc, dict):
+        try:
+            lat, lon = float(loc.get("lat")), float(loc.get("lon"))
+            if -90 <= lat <= 90 and -180 <= lon <= 180:
+                out["loc"] = {"name": str(loc.get("name") or "")[:80], "lat": round(lat, 4), "lon": round(lon, 4)}
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def get_prefs(conn, uid):
+    r = conn.execute("SELECT v FROM user_prefs WHERE user_id=?", (uid,)).fetchone()
+    try:
+        return clean_prefs(json.loads(r[0]) if r else {})
+    except ValueError:
+        return clean_prefs({})
+
+
+WEATHER_CACHE = {}
+WEATHER_LOCK = threading.Lock()
+
+
+def fetch_json(url, timeout=12):
+    req = urllib.request.Request(url, headers={"User-Agent": "PageVault/" + VERSION})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read(1 << 20).decode("utf-8"))
+
+
+def weather_for(lat, lon, units):
+    """Today's weather from Open-Meteo (free, no key). Cached 15 minutes per place."""
+    key = (round(lat, 2), round(lon, 2), units)
+    with WEATHER_LOCK:
+        hit = WEATHER_CACHE.get(key)
+        if hit and time.time() - hit[0] < 900:
+            return hit[1]
+    q = urllib.parse.urlencode({
+        "latitude": key[0], "longitude": key[1], "timezone": "auto", "forecast_days": 1,
+        "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m,is_day,relative_humidity_2m",
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset",
+        "temperature_unit": "fahrenheit" if units == "f" else "celsius",
+        "wind_speed_unit": "mph" if units == "f" else "kmh"})
+    d = fetch_json("https://api.open-meteo.com/v1/forecast?" + q)
+    cur, day = d.get("current") or {}, d.get("daily") or {}
+    first = lambda k: (day.get(k) or [None])[0]
+    out = {"temp": cur.get("temperature_2m"), "feels": cur.get("apparent_temperature"),
+           "code": cur.get("weather_code"), "wind": cur.get("wind_speed_10m"), "day": cur.get("is_day", 1),
+           "humidity": cur.get("relative_humidity_2m"),
+           "hi": first("temperature_2m_max"), "lo": first("temperature_2m_min"),
+           "rain": first("precipitation_probability_max"), "sunrise": first("sunrise"), "sunset": first("sunset"),
+           "units": units, "tz": d.get("timezone"), "at": int(time.time())}
+    with WEATHER_LOCK:
+        if len(WEATHER_CACHE) > 500:
+            WEATHER_CACHE.clear()
+        WEATHER_CACHE[key] = (time.time(), out)
+    return out
+
+
+def geocode(q):
+    q = q.strip()[:80]
+    if not q:
+        return []
+    params = {"name": q, "count": 6, "language": "en", "format": "json"}
+    if re.fullmatch(r"\d{5}", q):        # a US ZIP code
+        params["countryCode"] = "US"
+    d = fetch_json("https://geocoding-api.open-meteo.com/v1/search?" + urllib.parse.urlencode(params))
+    out = []
+    for r in d.get("results") or []:
+        parts = [r.get("name"), r.get("admin1"), r.get("country_code") if r.get("country_code") != "US" else None]
+        out.append({"name": ", ".join(x for x in parts if x), "lat": r.get("latitude"), "lon": r.get("longitude")})
+    return out
+
+
 def too_many_fails(ip):
     with LOGIN_LOCK:
         recent = [t for t in LOGIN_FAILS.get(ip, []) if t > time.time() - 300]
@@ -928,6 +1021,11 @@ class Handler(BaseHTTPRequestHandler):
         if viewer and viewer["must_change"]:
             return self.redirect("/")
         if viewer and can_view(self.conn, viewer, page):
+            if rel == "" and self.q("pv") != "1":   # opening the app (not one of its files): count it for the launcher's sort
+                self.conn.execute("INSERT INTO app_usage(user_id,page_id,opens,last) VALUES(?,?,1,?) "
+                                  "ON CONFLICT(user_id,page_id) DO UPDATE SET opens=opens+1, last=excluded.last",
+                                  (viewer["id"], page["id"], now()))
+                self.conn.commit()
             tok = make_view_token(viewer["id"], page["id"])
             return self.redirect("/v/%s/%s%s" % (tok, rel, qs))
         if page["visibility"] == "public":
@@ -1261,6 +1359,29 @@ class Handler(BaseHTTPRequestHandler):
                 raise HTTPError(404, "App not found")
             return self.api_page_data(method, user, page)
 
+        if path == "/api/prefs" and method in ("POST", "PUT"):
+            p = clean_prefs(self.read_json(limit=32768))
+            self.conn.execute("INSERT INTO user_prefs(user_id, v) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET v=excluded.v",
+                              (user["id"], json.dumps(p)))
+            self.conn.commit()
+            return self.send_json({"ok": True, "prefs": p})
+
+        if path == "/api/weather" and method in ("GET", "HEAD"):
+            try:
+                lat, lon = float(self.q("lat")), float(self.q("lon"))
+            except ValueError:
+                raise HTTPError(400, "Bad location")
+            try:
+                return self.send_json(weather_for(lat, lon, "c" if self.q("units") == "c" else "f"))
+            except Exception:
+                raise HTTPError(502, "Couldn't reach the weather service.")
+
+        if path == "/api/geocode" and method in ("GET", "HEAD"):
+            try:
+                return self.send_json({"results": geocode(self.q("q"))})
+            except Exception:
+                raise HTTPError(502, "Couldn't reach the place search.")
+
         if path == "/api/account/password" and method == "POST":
             d = self.read_json()
             # right after signing in with a temporary password we don't ask for it again
@@ -1321,8 +1442,13 @@ class Handler(BaseHTTPRequestHandler):
     def api_list_apps(self, user):
         rows = self.conn.execute(self.PAGE_SELECT + "ORDER BY p.title COLLATE NOCASE").fetchall()
         apps = [self.page_json(p, user) for p in rows if can_view(self.conn, user, p)]
+        use = {r[0]: (r[1], r[2]) for r in self.conn.execute(
+            "SELECT page_id, opens, last FROM app_usage WHERE user_id=?", (user["id"],))}
+        for a in apps:
+            a["opens"], a["last_open"] = use.get(a["id"], (0, 0))
         used = usage(self.conn, user["id"])
-        self.send_json({"apps": apps, "storage": {"used": used, "quota": STORE_QUOTA}})
+        self.send_json({"apps": apps, "storage": {"used": used, "quota": STORE_QUOTA},
+                        "prefs": get_prefs(self.conn, user["id"])})
 
     def unique_slug(self, base, exclude=None):
         return unique_slug(self.conn, base, exclude)
