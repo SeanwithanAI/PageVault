@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-14 mk1"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-14 mk2"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -835,7 +835,11 @@ RELAY_RULES = {
         r"/(IPlayerService/(GetOwnedGames|GetRecentlyPlayedGames)|ISteamUser/(ResolveVanityURL|GetPlayerSummaries))/v\d+/?"),
     "api.rawg.io": re.compile(
         r"/api/(games|genres|tags|platforms|developers|publishers|stores|creators)(/[A-Za-z0-9_\-]+){0,2}/?"),
+    # SteamGridDB: box art. Needs the person's own API key, sent as "Authorization: Bearer <key>".
+    "www.steamgriddb.com": re.compile(
+        r"/api/v2/(search/autocomplete/[^/]{1,200}|grids/(game|steam)/\d+)/?"),
 }
+RELAY_AUTH_HOSTS = {"www.steamgriddb.com"}   # the only service that may receive a key in a header
 RELAY_MAX_BYTES = 8 << 20
 RELAY_PER_MIN = int(os.environ.get("RELAY_PER_MIN", "600"))
 _relay_lock = threading.Lock()
@@ -866,9 +870,11 @@ def relay_allowed(uid):
         return True
 
 
-def relay_fetch(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "PageVault/%s (self-hosted)" % VERSION,
-                                               "Accept": "application/json"})
+def relay_fetch(url, auth=None):
+    headers = {"User-Agent": "PageVault/%s (self-hosted)" % VERSION, "Accept": "application/json"}
+    if auth:
+        headers["Authorization"] = "Bearer " + auth
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             code, raw = r.status, r.read(RELAY_MAX_BYTES + 1)
@@ -1353,9 +1359,13 @@ class Handler(BaseHTTPRequestHandler):
         url = relay_check_url(str(d.get("url") or "")) if isinstance(d, dict) else None
         if not url:
             return self.send_json({"error": "PageVault can't pass requests along to that address."}, 400)
+        auth = d.get("auth") if isinstance(d.get("auth"), str) else None
+        if auth is not None:
+            if urllib.parse.urlsplit(url).hostname not in RELAY_AUTH_HOSTS or not re.fullmatch(r"[A-Za-z0-9_\-]{8,128}", auth):
+                return self.send_json({"error": "PageVault can't send a key to that address."}, 400)
         if not relay_allowed(uid):
             return self.send_json({"error": "Too many requests at once. Wait a minute and try again."}, 429)
-        code, body = relay_fetch(url)
+        code, body = relay_fetch(url, auth) if auth else relay_fetch(url)
         return self.send_json(body, code)
 
     def route_store(self, method, tok, key):

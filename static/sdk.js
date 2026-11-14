@@ -22,8 +22,8 @@
  *   PageStore.files.put(blob, name) -> Promise<{id, name, type, size}>  (attachments, up to 25 MB)
  *   PageStore.files.url(id)    -> URL to show or download a saved file
  *   PageStore.files.remove(id) -> Promise
- *   PageStore.relay(url)       -> Promise<JSON>: fetch an allowed outside service through the
- *                                 server (Steam's Web API and RAWG), for services that block
+ *   PageStore.relay(url[, {auth}]) -> Promise<JSON>: fetch an allowed outside service through the
+ *                                 server (Steam's Web API, RAWG, SteamGridDB with {auth: key}), for services that block
  *                                 web pages or browsers that block an app's own requests
  *   PageStore.user             -> signed-in username (or null)
  *   PageStore.ready            -> already-resolved Promise (data is preloaded)
@@ -274,9 +274,11 @@
           return p.then(function () {}, function () {});
         }
       },
-      relay: function (url) {
+      relay: function (url, opts) {
         if (!cfg.relay) return Promise.reject(new Error("Sign in to PageVault to use this."));
-        var body = JSON.stringify({ url: String(url) });
+        var msg = { url: String(url) };
+        if (opts && opts.auth) msg.auth = String(opts.auth);   // SteamGridDB key, sent as "Authorization: Bearer"
+        var body = JSON.stringify(msg);
         return send(cfg.relay, { method: "POST", headers: { "Content-Type": "text/plain" }, body: body }, { pv_body: body })
           .then(function (r) {
             return r.json().catch(function () { return {}; }).then(function (j) {
