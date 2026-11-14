@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-14 mk5"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-14 mk6"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -1170,7 +1170,7 @@ class Handler(BaseHTTPRequestHandler):
             name = os.path.basename(page["source_path"] or "") or page["slug"] + ".html"
             return self.respond(200, body, "application/octet-stream", {
                 "Content-Disposition": "attachment; filename*=UTF-8''%s" % urllib.parse.quote(name),
-                "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+                "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"})   # the app fetches it to put in its "app + data" zip
         if rel == "__nav__" and method in ("POST", "OPTIONS"):
             self.extra_headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
                                        "Access-Control-Allow-Headers": "Content-Type", "Cache-Control": "no-store"})
