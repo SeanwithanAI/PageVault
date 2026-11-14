@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS**
 
-![Version](https://img.shields.io/badge/version-2026--11--14%20mk2-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--14%20mk3-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
@@ -154,6 +154,7 @@ PageStore.user                                 // signed-in username
 PageStore.persistent                           // false for signed-out visitors
 const owned = await PageStore.relay(url);      // fetch an allowed outside service through the server
 const art = await PageStore.relay(url, {auth: key}); // SteamGridDB only: sends your key as a Bearer token
+const thor = await PageStore.imports("cocoon");  // play sessions from the newest Cocoon backup in your imports folder
 ```
 
 **Relay (`PageStore.relay`).** Some services, such as Steam's Web API, only answer servers, and some browsers (Brave on iPhone) block an app's own requests. `PageStore.relay(url)` asks PageVault to fetch the address and hand back the JSON. It only reaches these services:
@@ -165,6 +166,32 @@ const art = await PageStore.relay(url, {auth: key}); // SteamGridDB only: sends 
 | SteamGridDB (`www.steamgriddb.com`) | Game search and box-art (grid) lookups. The app passes the person's own key with `PageStore.relay(url, {auth: key})`; it's sent only to SteamGridDB. |
 
 Only signed-in people can use it, only with GET, and it's limited to `RELAY_PER_MIN` requests a minute per person. Nothing is stored, and the address (which may contain an API key) isn't written to the log.
+
+## Ayn Thor playtime (Cocoon)
+
+A Better Backlog Tracker can add your Ayn Thor play sessions to its play log on its own. Cocoon (the Thor's launcher) times every game, and its backups include that history. Syncthing copies each new backup from the Thor to your NAS, and PageVault hands the sessions to the tracker the next time you open it. Only new sessions are added, so old backups never double-count.
+
+**One-time setup**
+
+1. **Make a folder on the NAS.** In **Datasets**, add `imports` under `Storage/Configs/PageVault` (preset **Apps**). Inside it, make a folder with your **PageVault username** (for example `sean`). Each person gets their own folder, and only their own apps can read it.
+2. **Install Syncthing on TrueNAS.** Go to **Apps → Discover Apps → Syncthing** and install it. Under storage, add a host path `/mnt/Storage/Configs/PageVault/imports` (any mount path, e.g. `/imports`). Open Syncthing's web page from the app.
+3. **Install Syncthing on the Thor** (a Syncthing app for Android, such as Syncthing-Fork). In Cocoon, note the folder its backups are saved to. In Syncthing on the Thor, share that folder as **Send Only**, and pair it with the TrueNAS Syncthing.
+4. **Accept the folder on TrueNAS** and set its path to your subfolder, e.g. `/imports/sean`, as **Receive Only**.
+5. **Let PageVault read it.** Go to **Apps → Installed → pagevault → Edit**, and add to the YAML (also in `truenas-app.yaml`, commented out):
+   ```yaml
+       environment:
+         IMPORTS_DIR: /imports
+       volumes:
+         - /mnt/Storage/Configs/PageVault/imports:/imports:ro
+   ```
+   Save. The app restarts.
+6. In the tracker's **Sync** tab, the Ayn Thor section should say **Automatic import is on** once a backup has arrived.
+
+**Day to day:** make a backup in Cocoon whenever you like. Syncthing copies it over within a minute or so, and the next time you open the tracker your Thor sessions are in the play log. Games from the Thor that aren't in your library are listed in the Sync tab to add, link to a game you have, or ignore.
+
+**If it says "no folder named … yet":** the subfolder must be named exactly like your PageVault username. If PageVault can't read it, run `chown -R 568:568 /mnt/Storage/Configs/PageVault/imports` in the TrueNAS shell.
+
+The tracker can also import a Cocoon backup by hand (**Sync → Import a Cocoon backup**), with or without this setup.
 
 ## Configuration
 
@@ -181,6 +208,7 @@ Set in the `environment:` section of `truenas-app.yaml`:
 | `VIEW_TOKEN_HOURS` | 24 | How long an open app keeps saving before it needs a reload |
 | `COOKIE_SECURE` | 0 | Set to `1` when served over HTTPS |
 | `RELAY_PER_MIN` | 600 | Relay requests allowed per person per minute |
+| `IMPORTS_DIR` | `/imports` | Optional read-only folder with one subfolder per person (named after their PageVault username). Apps can read Cocoon play history from it. See [Ayn Thor playtime](#ayn-thor-playtime-cocoon). |
 | `STANDALONE_URL` | `https://github.com/SeanwithanAI?tab=repositories` | Where the launcher's “Want the standalone versions?” note links. Set it to an empty value to hide the note. |
 
 **Remote access:** PageVault speaks plain HTTP. For access away from home, use Tailscale, a Cloudflare Tunnel or a reverse proxy with HTTPS, and set `COOKIE_SECURE: "1"`. Don't expose the port directly to the internet.
@@ -216,6 +244,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-14 mk3** | Optional imports folder (`IMPORTS_DIR`, read-only, one subfolder per person). Apps can read Cocoon play history from the newest backup there with `PageStore.imports("cocoon")`. Used by A Better Backlog Tracker for automatic Ayn Thor playtime. |
 | **2026-11-14 mk2** | Relay can reach SteamGridDB (box art) with the person's own key, which is sent only to SteamGridDB and never logged. |
 | **2026-11-14 mk1** | Relay for apps (`PageStore.relay`): signed-in apps can fetch Steam's Web API and RAWG through the server, including in Brave on iPhone. Used by A Better Backlog Tracker for automatic Steam playtime sync. |
 | **2026-11-14** | A home and app-switcher button inside every app (drag to move, position saved per person). Note at the bottom of the launcher linking to the standalone versions on GitHub (`STANDALONE_URL`). |
