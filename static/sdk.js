@@ -25,6 +25,8 @@
  *   PageStore.relay(url[, {auth}]) -> Promise<JSON>: fetch an allowed outside service through the
  *                                 server (Steam's Web API, RAWG, SteamGridDB with {auth: key}), for services that block
  *                                 web pages or browsers that block an app's own requests
+ *   PageStore.imports("cocoon") -> Promise<{configured, folder, file, modified, sessions}>: play sessions
+ *                                 from the newest Cocoon backup in the person's imports folder
  *   PageStore.user             -> signed-in username (or null)
  *   PageStore.ready            -> already-resolved Promise (data is preloaded)
  */
@@ -286,6 +288,12 @@
               return j;
             });
           });
+      },
+      imports: function (kind) {
+        if (!cfg.imports) return Promise.reject(new Error("Sign in to PageVault to use this."));
+        var body = JSON.stringify({ kind: String(kind) });
+        return send(cfg.imports, { method: "POST", headers: { "Content-Type": "text/plain" }, body: body }, { pv_body: body })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) { var e = new Error((j && j.error) || ("HTTP " + r.status)); e.status = r.status; throw e; } return j; }); });
       },
       user: cfg.user || null,
       page: cfg.page || null

@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-14 mk2"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-14 mk3"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -45,6 +45,7 @@ MAX_UNZIPPED = int(os.environ.get("MAX_UNZIPPED_MB", "500")) * 1024 * 1024
 MAX_ZIP_FILES = int(os.environ.get("MAX_ZIP_FILES", "5000"))
 STORE_QUOTA = int(os.environ.get("STORE_QUOTA_MB", "200")) * 1024 * 1024
 # "Want the standalone versions?" link at the bottom of the launcher (blank hides it)
+IMPORTS_DIR = os.environ.get("IMPORTS_DIR", "/imports")   # optional, read-only: <IMPORTS_DIR>/<username>/ holds files apps can read (e.g. Cocoon backups)
 STANDALONE_URL = os.environ.get("STANDALONE_URL", "https://github.com/SeanwithanAI?tab=repositories")
 MAX_VALUE = int(os.environ.get("MAX_VALUE_MB", "10")) * 1024 * 1024
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
@@ -890,6 +891,99 @@ def relay_fetch(url, auth=None):
         return (code if code >= 400 else 502), {"error": "That service answered with something other than JSON (HTTP %d)." % code}
 
 
+# --------------------------------------------------------------------------- imports (Cocoon play history)
+# A folder per person, e.g. synced from a handheld with Syncthing: <IMPORTS_DIR>/<username>/.
+# PageVault only reads it. For Cocoon (the Android launcher) it finds the newest backup .zip
+# (or play_history_v1.jsonl) and hands the play sessions to the signed-in person's apps.
+_cocoon_cache = {}
+_cocoon_lock = threading.Lock()
+COCOON_ENTRY = "play_history_v1.jsonl"
+
+
+def _cocoon_files(folder):
+    found = []
+    for root, dirs, files in os.walk(folder):
+        if root[len(folder):].count(os.sep) >= 3:
+            dirs[:] = []
+        for f in files:
+            low = f.lower()
+            if low.endswith(".zip") or low == COCOON_ENTRY:
+                p = os.path.join(root, f)
+                try:
+                    found.append((os.path.getmtime(p), p))
+                except OSError:
+                    pass
+        if len(found) > 500:
+            break
+    found.sort(reverse=True)
+    return [p for _, p in found]
+
+
+def _cocoon_parse(lines):
+    head, out = None, []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if r.get("recordType") == "header":
+            head = r
+        elif r.get("recordType") == "session" and isinstance(r.get("session"), dict):
+            s, idn = r["session"], r.get("identity") or {}
+            out.append({"cid": s.get("clientSessionId"), "name": s.get("gameName"), "date": s.get("date"),
+                        "start": s.get("startTime"), "end": s.get("endTime"), "min": s.get("durationMinutes"),
+                        "platform": idn.get("platform_id"), "sgdb": idn.get("steam_grid_db_id"),
+                        "igdb": idn.get("igdb_id") or s.get("hiveIgdbId"), "emu": s.get("emulatorPackage")})
+    if not head or head.get("format") != "cocoon_play_history":
+        return None
+    return out
+
+
+def _cocoon_read(path):
+    if path.lower().endswith(".zip"):
+        with zipfile.ZipFile(path) as z:
+            names = [n for n in z.namelist() if n.endswith("/" + COCOON_ENTRY) or n == COCOON_ENTRY]
+            if not names or z.getinfo(names[0]).file_size > (40 << 20):
+                return None
+            return _cocoon_parse(z.read(names[0]).decode("utf-8", "replace").splitlines())
+    if os.path.getsize(path) > (40 << 20):
+        return None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return _cocoon_parse(f)
+
+
+def cocoon_sessions(username):
+    base = os.path.realpath(IMPORTS_DIR)
+    if not os.path.isdir(base):
+        return {"configured": False}
+    folder = os.path.realpath(os.path.join(base, username))
+    if not re.fullmatch(r"[A-Za-z0-9_.\-]{1,64}", username) or not folder.startswith(base + os.sep) or not os.path.isdir(folder):
+        return {"configured": True, "folder": False}
+    for path in _cocoon_files(folder)[:20]:
+        try:
+            key = (path, os.path.getmtime(path))
+        except OSError:
+            continue
+        with _cocoon_lock:
+            hit = _cocoon_cache.get(path)
+        if hit and hit[0] == key:
+            sessions = hit[1]
+        else:
+            try:
+                sessions = _cocoon_read(path)
+            except Exception:
+                sessions = None
+            with _cocoon_lock:
+                _cocoon_cache[path] = (key, sessions)
+        if sessions is not None:
+            return {"configured": True, "folder": True, "file": os.path.basename(path),
+                    "modified": int(key[1] * 1000), "sessions": sessions}
+    return {"configured": True, "folder": True, "file": None, "sessions": []}
+
+
 # --------------------------------------------------------------------------- handler
 class Handler(BaseHTTPRequestHandler):
     server_version = "PageVault/1.0"
@@ -1155,6 +1249,9 @@ class Handler(BaseHTTPRequestHandler):
         if rel == "__relay__":
             self.form_mode()
             return self.route_relay(method, tok)
+        if rel == "__imports__":
+            self.form_mode()
+            return self.route_imports(method, tok)
         if rel == "__nav__" and method in ("POST", "OPTIONS"):
             self.extra_headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
                                        "Access-Control-Allow-Headers": "Content-Type", "Cache-Control": "no-store"})
@@ -1221,6 +1318,7 @@ class Handler(BaseHTTPRequestHandler):
                    "store": "/v/%s/__store__" % token if token else None,
                    "files": "/v/%s/__files__" % token if token else None,
                    "relay": "/v/%s/__relay__" % token if token else None,
+                   "imports": "/v/%s/__imports__" % token if token else None,
                    "user": viewer["username"] if viewer else None,
                    "page": page["slug"],
                    "home": "/a/%s/" % page["slug"]}
@@ -1332,6 +1430,33 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(200, body, ctype, headers)
 
     # ---- per-user page storage (called by sdk.js from inside the sandboxed page)
+    def route_imports(self, method, tok):
+        self.extra_headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
+                                   "Access-Control-Allow-Headers": "Content-Type", "Cache-Control": "no-store"})
+        if method == "OPTIONS":
+            return self.respond(204)
+        if method != "POST":
+            raise HTTPError(405, "Method not allowed")
+        if not tok or tok[2]:
+            raise HTTPError(401, "expired")
+        uid, pid, _ = tok
+        page = self.page_by_id(pid)
+        viewer = self.conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not page or not viewer or viewer["must_change"] or not can_view(self.conn, viewer, page):
+            raise HTTPError(403, "forbidden")
+        if (self.headers.get("Content-Type") or "").startswith("multipart/form-data"):
+            fields, _ = parse_multipart(self.headers.get("Content-Type"), self.read_body(65536))
+            raw = fields.get("pv_body") or "{}"
+        else:
+            raw = self.read_body(65536).decode("utf-8", "replace") or "{}"
+        try:
+            d = json.loads(raw)
+        except ValueError:
+            d = {}
+        if not isinstance(d, dict) or d.get("kind") != "cocoon":
+            return self.send_json({"error": "Unknown import kind."}, 400)
+        return self.send_json(cocoon_sessions(viewer["username"]))
+
     def route_relay(self, method, tok):
         self.extra_headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
                                    "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "86400",

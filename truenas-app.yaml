@@ -19,11 +19,14 @@ services:
       MAX_UPLOAD_MB: "100"             # largest app upload
       STORE_QUOTA_MB: "200"            # saved data allowed per person
       COOKIE_SECURE: "0"               # set to "1" if you serve it over HTTPS
+      # IMPORTS_DIR: /imports          # optional: Ayn Thor (Cocoon) playtime, see README "Ayn Thor playtime"
     volumes:
       # <dataset path on TrueNAS>:<path inside the app>   (no spaces)
       - /mnt/Storage/Configs/PageVault/code:/app:ro    # this repository (server.py + static/)
       - /mnt/Storage/Configs/PageVault/apps:/apps      # uploaded HTML apps
       - /mnt/Storage/Configs/PageVault/data:/data      # accounts + saved data — snapshot this
+      # Optional, after creating the imports dataset (README "Ayn Thor playtime"):
+      # - /mnt/Storage/Configs/PageVault/imports:/imports:ro   # Cocoon backups synced from the Thor, one folder per person
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
       interval: 30s
