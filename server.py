@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-14"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-14 mk1"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -825,6 +825,65 @@ def record_fail(ip):
         LOGIN_FAILS.setdefault(ip, []).append(time.time())
 
 
+# --------------------------------------------------------------------------- relay
+# Some services (Steam's Web API) don't let web pages read them directly, and some browsers
+# (Brave on iPhone) block an app's own requests. Apps can ask PageVault to fetch an allowed
+# address for them: PageStore.relay(url). Only these services and paths can be reached, only
+# by signed-in people, and only with GET. Nothing is stored; keys in the address aren't logged.
+RELAY_RULES = {
+    "api.steampowered.com": re.compile(
+        r"/(IPlayerService/(GetOwnedGames|GetRecentlyPlayedGames)|ISteamUser/(ResolveVanityURL|GetPlayerSummaries))/v\d+/?"),
+    "api.rawg.io": re.compile(
+        r"/api/(games|genres|tags|platforms|developers|publishers|stores|creators)(/[A-Za-z0-9_\-]+){0,2}/?"),
+}
+RELAY_MAX_BYTES = 8 << 20
+RELAY_PER_MIN = int(os.environ.get("RELAY_PER_MIN", "600"))
+_relay_lock = threading.Lock()
+_relay_hits = {}
+
+
+def relay_check_url(url):
+    try:
+        u = urllib.parse.urlsplit(url)
+    except ValueError:
+        return None
+    rule = RELAY_RULES.get((u.hostname or "").lower())
+    if (u.scheme != "https" or not rule or u.username or u.password or u.port not in (None, 443)
+            or not rule.fullmatch(u.path) or len(url) > 4000 or u.fragment):
+        return None
+    return urllib.parse.urlunsplit(("https", u.hostname.lower(), u.path, u.query, ""))
+
+
+def relay_allowed(uid):
+    t = time.time()
+    with _relay_lock:
+        hits = [x for x in _relay_hits.get(uid, []) if x > t - 60]
+        if len(hits) >= RELAY_PER_MIN:
+            _relay_hits[uid] = hits
+            return False
+        hits.append(t)
+        _relay_hits[uid] = hits
+        return True
+
+
+def relay_fetch(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "PageVault/%s (self-hosted)" % VERSION,
+                                               "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            code, raw = r.status, r.read(RELAY_MAX_BYTES + 1)
+    except urllib.error.HTTPError as e:
+        code, raw = e.code, e.read(RELAY_MAX_BYTES + 1)
+    except Exception:
+        return 502, {"error": "Couldn't reach that service from the PageVault server."}
+    if len(raw) > RELAY_MAX_BYTES:
+        return 502, {"error": "That answer was too big to pass along."}
+    try:
+        return code, json.loads(raw.decode("utf-8")) if raw.strip() else {}
+    except ValueError:
+        return (code if code >= 400 else 502), {"error": "That service answered with something other than JSON (HTTP %d)." % code}
+
+
 # --------------------------------------------------------------------------- handler
 class Handler(BaseHTTPRequestHandler):
     server_version = "PageVault/1.0"
@@ -1087,6 +1146,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, body, ICON_TYPES.get(ext, "application/octet-stream"), {
                 "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"})
+        if rel == "__relay__":
+            self.form_mode()
+            return self.route_relay(method, tok)
         if rel == "__nav__" and method in ("POST", "OPTIONS"):
             self.extra_headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
                                        "Access-Control-Allow-Headers": "Content-Type", "Cache-Control": "no-store"})
@@ -1152,6 +1214,7 @@ class Handler(BaseHTTPRequestHandler):
             cfg = {"persist": bool(token),
                    "store": "/v/%s/__store__" % token if token else None,
                    "files": "/v/%s/__files__" % token if token else None,
+                   "relay": "/v/%s/__relay__" % token if token else None,
                    "user": viewer["username"] if viewer else None,
                    "page": page["slug"],
                    "home": "/a/%s/" % page["slug"]}
@@ -1263,6 +1326,38 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(200, body, ctype, headers)
 
     # ---- per-user page storage (called by sdk.js from inside the sandboxed page)
+    def route_relay(self, method, tok):
+        self.extra_headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
+                                   "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "86400",
+                                   "Cache-Control": "no-store"})
+        if method == "OPTIONS":
+            return self.respond(204)
+        if method != "POST":
+            raise HTTPError(405, "Method not allowed")
+        if not tok or tok[2]:
+            raise HTTPError(401, "expired")
+        uid, pid, _ = tok
+        page = self.page_by_id(pid)
+        viewer = self.conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not page or not viewer or viewer["must_change"] or not can_view(self.conn, viewer, page):
+            raise HTTPError(403, "forbidden")
+        if (self.headers.get("Content-Type") or "").startswith("multipart/form-data"):
+            fields, _ = parse_multipart(self.headers.get("Content-Type"), self.read_body(65536))
+            raw = fields.get("pv_body") or "{}"
+        else:
+            raw = self.read_body(65536).decode("utf-8", "replace") or "{}"
+        try:
+            d = json.loads(raw)
+        except ValueError:
+            d = {}
+        url = relay_check_url(str(d.get("url") or "")) if isinstance(d, dict) else None
+        if not url:
+            return self.send_json({"error": "PageVault can't pass requests along to that address."}, 400)
+        if not relay_allowed(uid):
+            return self.send_json({"error": "Too many requests at once. Wait a minute and try again."}, 429)
+        code, body = relay_fetch(url)
+        return self.send_json(body, code)
+
     def route_store(self, method, tok, key):
         self.extra_headers.update({
             "Access-Control-Allow-Origin": "*",
