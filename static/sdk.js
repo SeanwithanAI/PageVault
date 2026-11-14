@@ -306,4 +306,98 @@
   }
   shim("localStorage", store);
   shim("sessionStorage", makeStore(false));
+
+  // ---- PageVault button: back to the launcher, or switch to another app.
+  // Lives in a shadow root so the app's CSS can't touch it (and it can't touch the app).
+  if (cfg.nav && cfg.nav.apps && window.top === window) {
+    var start = function () {
+      var nav = cfg.nav, pos = nav.pos || { side: "left", y: 0.72 };
+      var host = document.createElement("div");
+      host.setAttribute("data-pagevault", "");
+      host.style.cssText = "all:initial;position:fixed;z-index:2147483646;top:0;left:0;width:0;height:0";
+      document.documentElement.appendChild(host);
+      var root = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
+      var esc = function (t) { return String(t).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+      var hue = function (t) { var h = 0; for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 360; return h; };
+      var icon = function (a) {
+        var letter = '<span class="ic" style="background:hsl(' + hue(a.title) + ',62%,48%)">' + esc((a.title.trim()[0] || "?").toUpperCase()) + "</span>";
+        return a.icon ? '<img class="ic" src="' + esc(a.icon) + '" alt="" data-letter="' + esc(letter) + '">' : letter;
+      };
+      root.innerHTML = '<style>' +
+        ':host{all:initial}*{box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
+        '.fab{position:fixed;width:44px;height:44px;border-radius:50%;border:1px solid rgba(0,0,0,.12);background:rgba(255,255,255,.92);color:#1f2937;' +
+        'box-shadow:0 4px 14px rgba(0,0,0,.18);display:grid;place-items:center;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;' +
+        'opacity:.78;transition:opacity .15s,transform .15s;padding:0;-webkit-tap-highlight-color:transparent}' +
+        '.fab:hover,.fab:focus-visible{opacity:1}.fab.drag{opacity:1;transform:scale(1.08);transition:none}.fab svg{width:22px;height:22px}' +
+        '.fab:focus-visible{outline:3px solid #2563eb;outline-offset:2px}' +
+        '.ov{position:fixed;inset:0;background:rgba(15,20,30,.45);display:flex;align-items:flex-end;justify-content:center;padding:12px}' +
+        '@media (min-width:600px){.ov{align-items:center}}.ov[hidden]{display:none}' +
+        '.sh{width:min(420px,100%);max-height:min(560px,calc(100vh - 24px));overflow:auto;background:#fff;color:#16191f;border-radius:18px;padding:16px;box-shadow:0 20px 60px rgba(0,0,0,.3)}' +
+        '.hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.hd b{font-size:16px}' +
+        '.x{border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#6b7280;padding:4px 8px;border-radius:8px}' +
+        '.home{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border-radius:12px;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;font-size:15px}' +
+        '.home svg{width:20px;height:20px}.lbl{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin:16px 0 8px}' +
+        '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}' +
+        '.app{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px;border:1px solid #e5e7eb;border-radius:12px;text-decoration:none;color:inherit;text-align:center;font-size:13px;font-weight:600;line-height:1.25}' +
+        'a.app:hover{border-color:#2563eb}.app.cur{background:#eff6ff;border-color:#bfdbfe;cursor:default}.app small{font-weight:600;color:#2563eb;font-size:11px}' +
+        '.ic{width:40px;height:40px;border-radius:11px;object-fit:cover;display:grid;place-items:center;color:#fff;font-weight:700;font-size:18px}' +
+        '.tip{font-size:12px;color:#6b7280;margin:14px 0 0;text-align:center}' +
+        '@media (prefers-color-scheme:dark){.fab{background:rgba(30,34,43,.92);color:#e8eaee;border-color:rgba(255,255,255,.14)}' +
+        '.sh{background:#171a21;color:#e8eaee}.app{border-color:#272b35}.app.cur{background:#1e2533;border-color:#334155}.x,.lbl,.tip{color:#9aa3b2}.home{background:#3b82f6}}' +
+        '@media print{.fab,.ov{display:none!important}}</style>' +
+        '<button class="fab" type="button" aria-label="PageVault: go home or switch apps" title="PageVault (drag to move)">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></button>' +
+        '<div class="ov" hidden><div class="sh" role="dialog" aria-modal="true" aria-label="PageVault">' +
+        '<div class="hd"><b>PageVault</b><button class="x" type="button" aria-label="Close">✕</button></div>' +
+        '<a class="home" href="' + esc(nav.home) + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Back to PageVault home</a>' +
+        (nav.apps.length > 1 ? '<div class="lbl">Switch app</div><div class="grid">' + nav.apps.map(function (a) {
+          return a.current ? '<div class="app cur" aria-current="page">' + icon(a) + "<span>" + esc(a.title) + "</span><small>You’re here</small></div>"
+                           : '<a class="app" href="' + esc(a.url) + '">' + icon(a) + "<span>" + esc(a.title) + "</span></a>";
+        }).join("") + "</div>" : "") +
+        '<p class="tip">Tip: drag the round button to move it.</p></div></div>';
+      var fab = root.querySelector(".fab"), ov = root.querySelector(".ov");
+      root.querySelectorAll("img.ic").forEach(function (im) {
+        im.onerror = function () { var t = document.createElement("template"); t.innerHTML = im.getAttribute("data-letter"); im.replaceWith(t.content); };
+      });
+      var place = function () {
+        var h = window.innerHeight, y = Math.min(h - 52, Math.max(8, pos.y * h - 22));
+        fab.style.top = y + "px";
+        fab.style.left = pos.side === "right" ? "" : "10px";
+        fab.style.right = pos.side === "right" ? "10px" : "";
+      };
+      place();
+      window.addEventListener("resize", place);
+      var open = function () { ov.hidden = false; var f = root.querySelector(".home"); if (f) f.focus(); };
+      var close = function () { ov.hidden = true; fab.focus(); };
+      root.querySelector(".x").onclick = close;
+      ov.addEventListener("click", function (e) { if (e.target === ov) close(); });
+      root.addEventListener("keydown", function (e) { if (e.key === "Escape" && !ov.hidden) close(); });
+      // tap opens the menu; drag moves the button and snaps it to the nearest side
+      var d = null;
+      fab.addEventListener("pointerdown", function (e) {
+        d = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
+        try { fab.setPointerCapture(e.pointerId); } catch (x) {}
+      });
+      fab.addEventListener("pointermove", function (e) {
+        if (!d || e.pointerId !== d.id) return;
+        if (!d.moved && Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) < 8) return;
+        d.moved = true; fab.classList.add("drag");
+        fab.style.right = ""; fab.style.left = Math.max(4, Math.min(window.innerWidth - 48, e.clientX - 22)) + "px";
+        fab.style.top = Math.max(4, Math.min(window.innerHeight - 48, e.clientY - 22)) + "px";
+      });
+      var up = function (e) {
+        if (!d) return;
+        var was = d; d = null; fab.classList.remove("drag");
+        if (!was.moved) { if (e.type === "pointerup") open(); return; }
+        pos = { side: e.clientX > window.innerWidth / 2 ? "right" : "left", y: Math.min(0.95, Math.max(0.05, e.clientY / window.innerHeight)) };
+        place();
+        try { fetch(nav.save, { method: "POST", body: JSON.stringify(pos), headers: { "Content-Type": "text/plain" }, keepalive: true }).catch(function () {}); } catch (x) {}
+      };
+      fab.addEventListener("pointerup", up);
+      fab.addEventListener("pointercancel", up);
+      fab.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+      fab.addEventListener("click", function (e) { e.preventDefault(); });
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  }
 })();

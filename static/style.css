@@ -156,3 +156,7 @@ label.chk { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
   .nowbar { flex-direction: column; align-items: flex-start; }
   .nowbar .wx { justify-items: start; text-align: left; }
 }
+
+/* standalone-versions note */
+.disclaimer { text-align: center; font-size: 12px; line-height: 1.5; margin: 10px auto 0; max-width: 560px; }
+.disclaimer a { white-space: nowrap; }
