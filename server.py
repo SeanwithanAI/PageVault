@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-14 mk4"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-14 mk5"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -1155,6 +1155,22 @@ class Handler(BaseHTTPRequestHandler):
         if rel == "__relay__":
             self.form_mode()
             return self.route_relay(method, tok)
+        if rel == "__source__" and method in ("GET", "HEAD"):
+            # the app's own file, exactly as stored (without PageVault's additions), for "Download this app"
+            if not tok or tok[2]:
+                raise HTTPError(401, "Expired")
+            page = self.page_by_id(tok[1])
+            if not page:
+                return self.not_found()
+            path = os.path.join(page_dir(page["id"]), page["entry"])
+            if page["files"] != 1 or not os.path.isfile(path):   # only single-file apps
+                return self.not_found()
+            with open(path, "rb") as f:
+                body = f.read()
+            name = os.path.basename(page["source_path"] or "") or page["slug"] + ".html"
+            return self.respond(200, body, "application/octet-stream", {
+                "Content-Disposition": "attachment; filename*=UTF-8''%s" % urllib.parse.quote(name),
+                "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
         if rel == "__nav__" and method in ("POST", "OPTIONS"):
             self.extra_headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
                                        "Access-Control-Allow-Headers": "Content-Type", "Cache-Control": "no-store"})
@@ -1221,6 +1237,7 @@ class Handler(BaseHTTPRequestHandler):
                    "store": "/v/%s/__store__" % token if token else None,
                    "files": "/v/%s/__files__" % token if token else None,
                    "relay": "/v/%s/__relay__" % token if token else None,
+                   "source": "/v/%s/__source__" % token if token and page["files"] == 1 else None,
                    "user": viewer["username"] if viewer else None,
                    "page": page["slug"],
                    "home": "/a/%s/" % page["slug"]}

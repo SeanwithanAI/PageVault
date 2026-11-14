@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS**
 
-![Version](https://img.shields.io/badge/version-2026--11--14%20mk4-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--14%20mk5-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
@@ -216,6 +216,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-14 mk5** | Apps can offer **Download this app**: PageVault hands over the app's file exactly as installed, under its original name (single-file apps only). |
 | **2026-11-14 mk4** | Removed the imports folder added in mk3 (Ayn Thor playtime is now imported by hand in the tracker). If you added `IMPORTS_DIR` or an `imports` volume to the app's YAML, you can take them out. |
 | **2026-11-14 mk3** | Imports folder for automatic Cocoon playtime (removed in mk4). |
 | **2026-11-14 mk2** | Relay can reach SteamGridDB (box art) with the person's own key, which is sent only to SteamGridDB and never logged. |
