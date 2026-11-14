@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS**
 
-![Version](https://img.shields.io/badge/version-2026--11--14-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--14%20mk1-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
@@ -152,7 +152,17 @@ const f = await PageStore.files.put(file);     // store an attachment
 img.src = PageStore.files.url(f.id);           // show it
 PageStore.user                                 // signed-in username
 PageStore.persistent                           // false for signed-out visitors
+const owned = await PageStore.relay(url);      // fetch an allowed outside service through the server
 ```
+
+**Relay (`PageStore.relay`).** Some services, such as Steam's Web API, only answer servers, and some browsers (Brave on iPhone) block an app's own requests. `PageStore.relay(url)` asks PageVault to fetch the address and hand back the JSON. It only reaches these services:
+
+| Service | Allowed |
+|---|---|
+| Steam Web API (`api.steampowered.com`) | Owned games, recently played games, player summaries, vanity-name lookup |
+| RAWG game database (`api.rawg.io`) | Game, genre, tag, platform, developer, publisher, store and creator lookups |
+
+Only signed-in people can use it, only with GET, and it's limited to `RELAY_PER_MIN` requests a minute per person. Nothing is stored, and the address (which may contain an API key) isn't written to the log.
 
 ## Configuration
 
@@ -168,6 +178,7 @@ Set in the `environment:` section of `truenas-app.yaml`:
 | `SESSION_DAYS` | 30 | How long a sign-in lasts |
 | `VIEW_TOKEN_HOURS` | 24 | How long an open app keeps saving before it needs a reload |
 | `COOKIE_SECURE` | 0 | Set to `1` when served over HTTPS |
+| `RELAY_PER_MIN` | 600 | Relay requests allowed per person per minute |
 | `STANDALONE_URL` | `https://github.com/SeanwithanAI?tab=repositories` | Where the launcher's “Want the standalone versions?” note links. Set it to an empty value to hide the note. |
 
 **Remote access:** PageVault speaks plain HTTP. For access away from home, use Tailscale, a Cloudflare Tunnel or a reverse proxy with HTTPS, and set `COOKIE_SECURE: "1"`. Don't expose the port directly to the internet.
@@ -203,6 +214,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-14 mk1** | Relay for apps (`PageStore.relay`): signed-in apps can fetch Steam's Web API and RAWG through the server, including in Brave on iPhone. Used by A Better Backlog Tracker for automatic Steam playtime sync. |
 | **2026-11-14** | A home and app-switcher button inside every app (drag to move, position saved per person). Note at the bottom of the launcher linking to the standalone versions on GitHub (`STANDALONE_URL`). |
 | **2026-11-13** | Launcher: search, sort (My order, Name A–Z, Recently opened, Most opened), **Arrange** mode (drag or ‹ › to reorder, ★ to pin to the top, Hide/Show), saved per person on the server. New date, time and weather bar at the bottom (Open-Meteo, set by city or ZIP, °F/°C, 12/24-hour). New tables `user_prefs` and `app_usage` are added automatically. |
 | **2026-11-12** | Version numbering: the first release of a day is just the date, then `mk1`, `mk2`… for later releases that day. PageVault now sorts these correctly (a plain date comes before that day's `mk1`). |
