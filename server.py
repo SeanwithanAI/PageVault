@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-13"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-14"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -44,6 +44,8 @@ MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_MB", "100")) * 1024 * 1024
 MAX_UNZIPPED = int(os.environ.get("MAX_UNZIPPED_MB", "500")) * 1024 * 1024
 MAX_ZIP_FILES = int(os.environ.get("MAX_ZIP_FILES", "5000"))
 STORE_QUOTA = int(os.environ.get("STORE_QUOTA_MB", "200")) * 1024 * 1024
+# "Want the standalone versions?" link at the bottom of the launcher (blank hides it)
+STANDALONE_URL = os.environ.get("STANDALONE_URL", "https://github.com/SeanwithanAI?tab=repositories")
 MAX_VALUE = int(os.environ.get("MAX_VALUE_MB", "10")) * 1024 * 1024
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "30"))
@@ -713,6 +715,13 @@ def clean_prefs(d):
            "units": "c" if d.get("units") == "c" else "f",
            "clock": d.get("clock") if d.get("clock") in ("12", "24") else "auto",
            "weather": d.get("weather") is not False}
+    nav = d.get("nav")
+    if isinstance(nav, dict):
+        try:
+            out["nav"] = {"side": "right" if nav.get("side") == "right" else "left",
+                          "y": min(0.95, max(0.05, float(nav.get("y", 0.85))))}
+        except (TypeError, ValueError):
+            pass
     loc = d.get("loc")
     if isinstance(loc, dict):
         try:
@@ -722,6 +731,24 @@ def clean_prefs(d):
         except (TypeError, ValueError):
             pass
     return out
+
+
+def nav_apps(conn, viewer, current, token):
+    """The apps this person can open, in their launcher order, for the in-app switcher."""
+    prefs = get_prefs(conn, viewer["id"])
+    rows = conn.execute("SELECT p.*, u.username AS owner FROM pages p LEFT JOIN users u ON u.id=p.owner_id").fetchall()
+    use = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT page_id, opens, last FROM app_usage WHERE user_id=?", (viewer["id"],))}
+    pos = {pid: i for i, pid in enumerate(prefs["order"])}
+    fav, hidden, sort = set(prefs["fav"]), set(prefs["hidden"]), prefs["sort"]
+    apps = [p for p in rows if can_view(conn, viewer, p) and (p["id"] not in hidden or p["id"] == current["id"])]
+    def key(p):
+        o, last = use.get(p["id"], (0, 0))
+        k = {"custom": (pos.get(p["id"], 10 ** 6),), "name": (), "recent": (-last,), "most": (-o, -last)}[sort]
+        return (p["id"] not in fav,) + k + (p["title"].lower(),)
+    apps.sort(key=key)
+    return [{"title": p["title"], "url": "/a/%s/" % p["slug"], "current": p["id"] == current["id"],
+             "icon": "/v/%s/__icon__/%d?v=%s" % (token, p["id"], p["icon"].split(".")[-1]) if p["icon"] else None}
+            for p in apps]
 
 
 def get_prefs(conn, uid):
@@ -1046,6 +1073,40 @@ class Handler(BaseHTTPRequestHandler):
         if rel == "__store__" or rel.startswith("__store__/"):
             self.form_mode()
             return self.route_store(method, tok, rel[len("__store__"):].lstrip("/"))
+        if rel.startswith("__icon__/") and method in ("GET", "HEAD") and tok and not tok[2]:
+            other = self.page_by_id(int(rel[9:])) if rel[9:].isdigit() else None
+            viewer = self.conn.execute("SELECT * FROM users WHERE id=?", (tok[0],)).fetchone()
+            if not other or not other["icon"] or not viewer or not can_view(self.conn, viewer, other):
+                return self.not_found()
+            ext = other["icon"].split(".")[0]
+            try:
+                with open(os.path.join(ICON_DIR, "%d.%s" % (other["id"], ext)), "rb") as f:
+                    body = f.read()
+            except FileNotFoundError:
+                return self.not_found()
+            return self.respond(200, body, ICON_TYPES.get(ext, "application/octet-stream"), {
+                "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"})
+        if rel == "__nav__" and method in ("POST", "OPTIONS"):
+            self.extra_headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
+                                       "Access-Control-Allow-Headers": "Content-Type", "Cache-Control": "no-store"})
+            if method == "OPTIONS":
+                return self.respond(204)
+            if not tok or tok[2]:
+                raise HTTPError(401, "Expired")
+            d = self.read_json(limit=4096)
+            if isinstance(d.get("pv_body"), str):
+                try:
+                    d = json.loads(d["pv_body"])
+                except ValueError:
+                    d = {}
+            cur = get_prefs(self.conn, tok[0])
+            cur["nav"] = d
+            p = clean_prefs(cur)
+            self.conn.execute("INSERT INTO user_prefs(user_id, v) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET v=excluded.v",
+                              (tok[0], json.dumps(p)))
+            self.conn.commit()
+            return self.send_json({"ok": True})
         if rel == "__files__" or rel.startswith("__files__/"):
             if self.form_mode() and method == "POST" and self.q("_method") == "DELETE":
                 method = "DELETE"
@@ -1094,6 +1155,9 @@ class Handler(BaseHTTPRequestHandler):
                    "user": viewer["username"] if viewer else None,
                    "page": page["slug"],
                    "home": "/a/%s/" % page["slug"]}
+            if token and viewer:
+                cfg["nav"] = {"home": "/", "apps": nav_apps(self.conn, viewer, page, token),
+                              "pos": get_prefs(self.conn, viewer["id"]).get("nav"), "save": "/v/%s/__nav__" % token}
             body = inject_sdk(body, cfg, data, vers)
         if ctype.startswith("text/") or ctype.endswith("javascript") or ctype.endswith("json"):
             ctype += "; charset=utf-8"
@@ -1448,7 +1512,7 @@ class Handler(BaseHTTPRequestHandler):
             a["opens"], a["last_open"] = use.get(a["id"], (0, 0))
         used = usage(self.conn, user["id"])
         self.send_json({"apps": apps, "storage": {"used": used, "quota": STORE_QUOTA},
-                        "prefs": get_prefs(self.conn, user["id"])})
+                        "prefs": get_prefs(self.conn, user["id"]), "standalone": STANDALONE_URL})
 
     def unique_slug(self, base, exclude=None):
         return unique_slug(self.conn, base, exclude)
