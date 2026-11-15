@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS**
 
-![Version](https://img.shields.io/badge/version-2026--11--14%20mk6-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--15-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
@@ -216,6 +216,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-15** | An app's **app + data** zip now always contains the exact installed file, even when the app has been open longer than its 24-hour link (it used to fall back to the browser's own copy of the page). |
 | **2026-11-14 mk6** | Apps can fetch their installed file for their **app + data** zip download. |
 | **2026-11-14 mk5** | Apps can offer **Download this app**: PageVault hands over the app's file exactly as installed, under its original name (single-file apps only). |
 | **2026-11-14 mk4** | Removed the imports folder added in mk3 (Ayn Thor playtime is now imported by hand in the tracker). If you added `IMPORTS_DIR` or an `imports` volume to the app's YAML, you can take them out. |

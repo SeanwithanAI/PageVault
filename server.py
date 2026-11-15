@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-14 mk6"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-15"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -203,6 +203,14 @@ def make_view_token(uid, pid):
     payload = "%d.%d.%d" % (uid, pid, now() + VIEW_TOKEN_HOURS * 3600)
     sig = b64(hmac.new(SECRET, payload.encode(), hashlib.sha256).digest()[:18])
     return payload + "." + sig
+
+
+def token_expiry(tok):
+    """When a view token (already checked by parse_view_token) stops being valid, as a Unix time."""
+    try:
+        return int(tok.split(".")[2])
+    except (IndexError, ValueError):
+        return 0
 
 
 def parse_view_token(tok):
@@ -1157,11 +1165,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.route_relay(method, tok)
         if rel == "__source__" and method in ("GET", "HEAD"):
             # the app's own file, exactly as stored (without PageVault's additions), for "Download this app"
-            if not tok or tok[2]:
+            if not tok:
                 raise HTTPError(401, "Expired")
             page = self.page_by_id(tok[1])
             if not page:
                 return self.not_found()
+            if tok[2]:
+                # An app left open past its link's 24 hours still asks for its own file (the same page that's
+                # already open). Allow a genuine expired link for up to 30 days, if that person can still open the app.
+                viewer = self.conn.execute("SELECT * FROM users WHERE id=?", (tok[0],)).fetchone()
+                if not viewer or viewer["must_change"] or not can_view(self.conn, viewer, page) \
+                        or token_expiry(token) < now() - 30 * 86400:
+                    raise HTTPError(401, "Expired")
             path = os.path.join(page_dir(page["id"]), page["entry"])
             if page["files"] != 1 or not os.path.isfile(path):   # only single-file apps
                 return self.not_found()
