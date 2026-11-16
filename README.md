@@ -82,7 +82,7 @@ Where an app saves depends on **how it's opened**. It's always one place or the 
 
 Every app in PageVault runs from your server, so it works the same on every device and your data follows you.
 
-- **iPhone and iPad:** open your PageVault address in Safari, sign in, then tap **Share → Add to Home Screen**. Do the same from inside any app (for example `/a/a-better-ledger/`) to give that app its own home-screen icon.
+- **iPhone and iPad:** open your PageVault address in **Safari** and sign in. Tap **Share** (on iOS 26, tap **•••** first, then **Share**), scroll down, and tap **Add to Home Screen**. If it isn't listed, tap **Edit Actions** at the bottom and add it. Do the same from inside any app (for example `/a/a-better-ledger/`) to give that app its own home-screen icon.
 - **Android:** open PageVault in Chrome, sign in, then tap **⋮ → Add to Home screen** (or **Install app**). This also works from inside any app.
 - **Desktop:** bookmark your PageVault address. In Chrome or Edge you can also use **⋮ → Cast, save and share → Install page as app** to give an app its own window.
 
