@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-15"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-16"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -555,6 +555,8 @@ def collect_versions(repo, tree, folder, groups):
             continue
         if folder and not path.startswith(folder + "/"):
             continue
+        if path.lower().startswith("docs/") or os.path.basename(path).lower() in ("index.html", "index.htm"):
+            continue   # the repo's own web page (GitHub Pages) and screenshots, not app versions
         name = pretty_name(path)
         label, vkey = parse_version(path)
         g = groups.setdefault(name.lower(), {"key": name.lower(), "name": name, "versions": []})
