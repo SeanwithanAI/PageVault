@@ -14,6 +14,7 @@ Pure Python standard library. No pip installs needed.
 """
 import base64
 import calendar
+import errno
 import hashlib
 import hmac
 import json
@@ -34,19 +35,32 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-16 mk1"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-16 mk2"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8080"))
-MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_MB", "100")) * 1024 * 1024
+# Size limits in MB. 0 (the default for people's data) means no limit: the only limit is the
+# free space on the data dataset. Set a number to cap it, e.g. STORE_QUOTA_MB=500.
+NO_LIMIT = 1 << 62
+
+
+def env_mb(name, default):
+    try:
+        v = float(os.environ.get(name, default) or 0)
+    except ValueError:
+        v = float(default)
+    return int(v * 1024 * 1024) if v > 0 else NO_LIMIT
+
+
+MAX_UPLOAD = env_mb("MAX_UPLOAD_MB", "0")
 MAX_UNZIPPED = int(os.environ.get("MAX_UNZIPPED_MB", "500")) * 1024 * 1024
 MAX_ZIP_FILES = int(os.environ.get("MAX_ZIP_FILES", "5000"))
-STORE_QUOTA = int(os.environ.get("STORE_QUOTA_MB", "200")) * 1024 * 1024
+STORE_QUOTA = env_mb("STORE_QUOTA_MB", "0")
 # "Want the standalone versions?" link at the bottom of the launcher (blank hides it)
 STANDALONE_URL = os.environ.get("STANDALONE_URL", "https://github.com/SeanwithanAI?tab=repositories")
-MAX_VALUE = int(os.environ.get("MAX_VALUE_MB", "10")) * 1024 * 1024
+MAX_VALUE = env_mb("MAX_VALUE_MB", "0")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "30"))
 VIEW_TOKEN_HOURS = int(os.environ.get("VIEW_TOKEN_HOURS", "24"))
@@ -58,8 +72,8 @@ PAGES_DIR = os.environ.get("APPS_DIR") or os.path.join(DATA_DIR, "pages")
 TMP_DIR = os.path.join(PAGES_DIR, ".tmp")  # same filesystem as PAGES_DIR so swaps are atomic
 ICON_DIR = os.path.join(PAGES_DIR, ".icons")  # custom app images
 FILES_DIR = os.path.join(DATA_DIR, "files")   # files apps save for each person (e.g. receipts)
-MAX_FILE = int(os.environ.get("MAX_FILE_MB", "25")) * 1024 * 1024
-MAX_ICON = int(os.environ.get("MAX_IMAGE_MB", "5")) * 1024 * 1024
+MAX_FILE = env_mb("MAX_FILE_MB", "0")
+MAX_ICON = env_mb("MAX_IMAGE_MB", "5")
 ICON_TYPES = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif",
               "webp": "image/webp", "svg": "image/svg+xml"}
 DB_PATH = os.path.join(DATA_DIR, "pagevault.db")
@@ -931,8 +945,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": e.msg}, e.code)
         except (BrokenPipeError, ConnectionResetError):
             pass
-        except Exception:
+        except Exception as e:
             traceback.print_exc()
+            full = (isinstance(e, OSError) and e.errno in (errno.ENOSPC, errno.EDQUOT)) or \
+                   (isinstance(e, sqlite3.OperationalError) and "full" in str(e).lower())
+            if full:
+                # nothing was saved; what's already stored is untouched (the database rolls back)
+                try:
+                    if self.conn:
+                        self.conn.rollback()
+                    self.send_json({"error": "The server is out of storage space, so this wasn't saved. "
+                                             "Ask the PageVault admin to free up space on the NAS."}, 507)
+                except Exception:
+                    pass
+                return
             try:
                 self.send_json({"error": "Internal server error"}, 500)
             except Exception:
@@ -1650,7 +1676,7 @@ class Handler(BaseHTTPRequestHandler):
         for a in apps:
             a["opens"], a["last_open"] = use.get(a["id"], (0, 0))
         used = usage(self.conn, user["id"])
-        self.send_json({"apps": apps, "storage": {"used": used, "quota": STORE_QUOTA},
+        self.send_json({"apps": apps, "storage": {"used": used, "quota": 0 if STORE_QUOTA == NO_LIMIT else STORE_QUOTA},
                         "prefs": get_prefs(self.conn, user["id"]), "standalone": STANDALONE_URL})
 
     def unique_slug(self, base, exclude=None):
@@ -1835,7 +1861,7 @@ class Handler(BaseHTTPRequestHandler):
                 users = c.execute("SELECT id, username, is_admin FROM users ORDER BY username").fetchall()
                 return self.send_json({"apps": [self.page_json(p, me, admin=True) for p in rows],
                                        "users": [dict(u) for u in users],
-                                       "limits": {"upload": MAX_UPLOAD}})
+                                       "limits": {"upload": 0 if MAX_UPLOAD == NO_LIMIT else MAX_UPLOAD}})
             if method == "POST":
                 return self.api_upload(me)
         m = re.fullmatch(r"/api/admin/apps/(\d+)", path)

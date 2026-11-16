@@ -16,8 +16,6 @@ services:
       - "8090:8080"                    # open http://<truenas-ip>:8090
     environment:
       TZ: America/Chicago
-      MAX_UPLOAD_MB: "100"             # largest app upload
-      STORE_QUOTA_MB: "200"            # saved data allowed per person
       COOKIE_SECURE: "0"               # set to "1" if you serve it over HTTPS
     volumes:
       # <dataset path on TrueNAS>:<path inside the app>   (no spaces)

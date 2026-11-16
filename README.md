@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS or Docker**
 
-![Version](https://img.shields.io/badge/version-2026--11--16%20mk1-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--16%20mk2-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fseanwithanai%2Fpagevault-2496ED)
@@ -63,7 +63,7 @@ It's one Python file and a `static/` folder, using only the Python standard libr
 - **The server is the only copy** (see [Where app data is stored](#where-app-data-is-stored)). Browser storage (`localStorage`, IndexedDB, cookies, Cache Storage) is blocked inside apps. Apps that use `localStorage` work unchanged, because it's redirected to the server. Nothing is left in a browser to go out of sync.
 - **Conflict protection.** Every saved value has a version. A stale tab or device can't overwrite newer data; it's asked to reload instead.
 - **Saves on close.** Changes made right before a tab closes still reach the server.
-- **Attachments.** Apps can store files such as receipts and PDFs, up to 25 MB each.
+- **Attachments.** Apps can store files such as receipts and PDFs, with no size limit by default.
 
 ## Where app data is stored
 
@@ -198,16 +198,18 @@ Set in the `environment:` section of `truenas-app.yaml`:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MAX_UPLOAD_MB` | 100 | Largest app upload |
-| `STORE_QUOTA_MB` | 200 | Saved data and files allowed per person |
-| `MAX_VALUE_MB` | 10 | Largest single saved value |
-| `MAX_FILE_MB` | 25 | Largest attachment |
+| `STORE_QUOTA_MB` | 0 (no limit) | Saved data and files allowed per person |
+| `MAX_VALUE_MB` | 0 (no limit) | Largest single saved value (each app's main save) |
+| `MAX_FILE_MB` | 0 (no limit) | Largest attachment (pictures, receipts…) |
+| `MAX_UPLOAD_MB` | 0 (no limit) | Largest app upload or data import |
 | `MAX_IMAGE_MB` | 5 | Largest app logo |
 | `SESSION_DAYS` | 30 | How long a sign-in lasts |
 | `VIEW_TOKEN_HOURS` | 24 | How long an open app keeps saving before it needs a reload |
 | `COOKIE_SECURE` | 0 | Set to `1` when served over HTTPS |
 | `RELAY_PER_MIN` | 600 | Relay requests allowed per person per minute |
 | `STANDALONE_URL` | `https://github.com/SeanwithanAI?tab=repositories` | Where the launcher's “Want the standalone versions?” note links. Set it to an empty value to hide the note. |
+
+By default there's **no limit** on how much people save: the only limit is the free space on the `data` dataset. Attachments are streamed straight to disk, so big files don't use extra memory. If the NAS ever runs out of space, PageVault says so plainly and nothing already saved is affected. To set a cap, give the variable a number in MB, for example `STORE_QUOTA_MB: "500"`.
 
 **Remote access:** PageVault speaks plain HTTP. For access away from home, use Tailscale, a Cloudflare Tunnel or a reverse proxy with HTTPS, and set `COOKIE_SECURE: "1"`. Don't expose the port directly to the internet.
 
@@ -244,6 +246,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-16 mk2** | **No storage limits.** People can save as much data and as many attachments as the NAS has room for: the 200 MB per person, 10 MB per save, 25 MB per file and 100 MB upload limits are gone (they can still be set if you want one). The home screen shows how much you've saved without an "of" limit. A clear message if the NAS runs out of space. **Existing installs:** remove the `MAX_UPLOAD_MB` and `STORE_QUOTA_MB` lines from the app's YAML, or the old limits stay in place. |
 | **2026-11-16 mk1** | PageVault is now a ready-made image (`ghcr.io/seanwithanai/pagevault`), built automatically with every release. TrueNAS shows **Update available** and updates with one click, with no shell or `git pull`. New Docker setup (`docker-compose.yml`) with optional automatic updates. The `code` dataset is no longer needed; see [Moving an existing TrueNAS install](#moving-an-existing-truenas-install-to-the-image). |
 | **2026-11-16** | The update check skips each repo's `docs/` folder and `index.html`, so an app's GitHub Pages copy doesn't show up as a separate app. |
 | **2026-11-15** | An app's **app + data** zip now always contains the exact installed file, even when the app has been open longer than its 24-hour link (it used to fall back to the browser's own copy of the page). |

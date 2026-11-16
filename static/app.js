@@ -217,7 +217,7 @@
       appList = d.apps;
       if (d.prefs) prefs = d.prefs;
       drawApps();
-      $("storage").textContent = d.storage.used ? "Your saved data: " + size(d.storage.used) + " of " + size(d.storage.quota) : "";
+      $("storage").textContent = d.storage.used ? "Your saved data: " + size(d.storage.used) + (d.storage.quota ? " of " + size(d.storage.quota) : "") : "";
       if (d.standalone) { $("standaloneLink").href = d.standalone; $("standaloneLink").textContent = d.standalone.replace(/^https?:\/\//, "").replace(/\?.*$/, ""); }
       $("standalone").classList.toggle("hidden", !d.standalone);
       startClock();

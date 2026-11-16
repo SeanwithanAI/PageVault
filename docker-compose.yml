@@ -15,8 +15,6 @@ services:
       - "8090:8080"                    # change 8090 if that port is taken
     environment:
       TZ: America/Chicago              # your time zone
-      MAX_UPLOAD_MB: "100"
-      STORE_QUOTA_MB: "200"
       COOKIE_SECURE: "0"               # "1" if you serve it over HTTPS
     volumes:
       - pagevault-data:/data           # accounts + everyone's saved data (back this up)

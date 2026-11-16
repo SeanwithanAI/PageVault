@@ -19,7 +19,7 @@
  *   PageStore.persistent       -> true when data is saved to the server
  *   PageStore.pending          -> true while changes are still waiting to reach the server
  *   PageStore.conflicted       -> true if another tab/device saved first (reload needed)
- *   PageStore.files.put(blob, name) -> Promise<{id, name, type, size}>  (attachments, up to 25 MB)
+ *   PageStore.files.put(blob, name) -> Promise<{id, name, type, size}>  (attachments, no size limit unless the server sets one)
  *   PageStore.files.url(id)    -> URL to show or download a saved file
  *   PageStore.files.remove(id) -> Promise
  *   PageStore.relay(url[, {auth}]) -> Promise<JSON>: fetch an allowed outside service through the
