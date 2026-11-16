@@ -234,4 +234,4 @@ docs/screenshots/    README images
 
 ---
 
-<div align="center"><sub>PageVault · by SeanwithanAI · private repository</sub></div>
+<div align="center"><sub>PageVault · by SeanwithanAI</sub></div>
