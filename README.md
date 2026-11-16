@@ -78,6 +78,16 @@ Where an app saves depends on **how it's opened**. It's always one place or the 
 - **Moving data between the two:** use the app's own **Export / Back up** on one side and **Import / Restore** on the other. In PageVault, each app's **⋯** menu also has **Export my data** and **Import my data from a backup**.
 - **Current versions with the status label:** A Better Ledger mk6+, A Better PTO Tracker mk4+, A Better Maintenance Tracker mk14+.
 
+## Opening PageVault on your devices
+
+Every app in PageVault runs from your server, so it works the same on every device and your data follows you.
+
+- **iPhone and iPad:** open your PageVault address in Safari, sign in, then tap **Share → Add to Home Screen**. Do the same from inside any app (for example `/a/a-better-ledger/`) to give that app its own home-screen icon.
+- **Android:** open PageVault in Chrome, sign in, then tap **⋮ → Add to Home screen** (or **Install app**). This also works from inside any app.
+- **Desktop:** bookmark your PageVault address. In Chrome or Edge you can also use **⋮ → Cast, save and share → Install page as app** to give an app its own window.
+
+Away from home, you'll need a way to reach your server, such as a VPN back to your home network.
+
 ## Installation (TrueNAS SCALE 24.10+)
 
 This server uses three datasets, created with the **Apps** dataset preset:
@@ -219,7 +229,7 @@ docs/screenshots/    README images
 | **2026-11-15** | An app's **app + data** zip now always contains the exact installed file, even when the app has been open longer than its 24-hour link (it used to fall back to the browser's own copy of the page). |
 | **2026-11-14 mk6** | Apps can fetch their installed file for their **app + data** zip download. |
 | **2026-11-14 mk5** | Apps can offer **Download this app**: PageVault hands over the app's file exactly as installed, under its original name (single-file apps only). |
-| **2026-11-14 mk4** | Removed the imports folder added in mk3 (Ayn Thor playtime is now imported by hand in the tracker). If you added `IMPORTS_DIR` or an `imports` volume to the app's YAML, you can take them out. |
+| **2026-11-14 mk4** | Removed the imports folder added in mk3 (retro handheld playtime is now imported by hand in the tracker). If you added `IMPORTS_DIR` or an `imports` volume to the app's YAML, you can take them out. |
 | **2026-11-14 mk3** | Imports folder for automatic Cocoon playtime (removed in mk4). |
 | **2026-11-14 mk2** | Relay can reach SteamGridDB (box art) with the person's own key, which is sent only to SteamGridDB and never logged. |
 | **2026-11-14 mk1** | Relay for apps (`PageStore.relay`): signed-in apps can fetch Steam's Web API and RAWG through the server, including in Brave on iPhone. Used by A Better Backlog Tracker for automatic Steam playtime sync. |
