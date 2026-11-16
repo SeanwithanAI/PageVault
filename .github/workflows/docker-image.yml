@@ -51,3 +51,15 @@ jobs:
             ghcr.io/seanwithanai/pagevault:${{ steps.v.outputs.version }}
           labels: |
             org.opencontainers.image.version=${{ steps.v.outputs.version }}
+
+      - name: Check the image can be downloaded without signing in
+        run: |
+          t=$(curl -fsS "https://ghcr.io/token?scope=repository:seanwithanai/pagevault:pull" | jq -r .token)
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $t" \
+            -H "Accept: application/vnd.oci.image.index.v1+json" \
+            https://ghcr.io/v2/seanwithanai/pagevault/manifests/latest)
+          echo "Anonymous download check: HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::The image is private. On GitHub: your profile > Packages > pagevault > Package settings > Change visibility > Public."
+            exit 1
+          fi
