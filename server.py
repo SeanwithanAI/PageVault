@@ -35,7 +35,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-16 mk2"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-16 mk3"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -1378,9 +1378,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": True})
         if method not in ("GET", "HEAD"):
             raise HTTPError(405, "Method not allowed")
+        path = file_path(uid, pid, fid)
         try:
-            with open(file_path(uid, pid, fid), "rb") as f:
-                body = f.read()
+            size = os.path.getsize(path)
         except FileNotFoundError:
             raise HTTPError(404, "not found")
         ctype = row["type"] if row["type"] in SAFE_INLINE else "application/octet-stream"
@@ -1389,7 +1389,17 @@ class Handler(BaseHTTPRequestHandler):
                    "Cache-Control": "private, max-age=86400", "Referrer-Policy": "no-referrer"}
         if ctype != "application/pdf":  # PDFs need the browser's viewer; everything else is sandboxed
             headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
-        self.respond(200, body, ctype, headers)
+        # sent a piece at a time, so big attachments don't have to fit in memory
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(size))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        for k, v in {**self.extra_headers, **headers}.items():
+            self.send_header(k, v)
+        self.end_headers()
+        if self.command != "HEAD":
+            with open(path, "rb") as f:
+                shutil.copyfileobj(f, self.wfile, 1 << 16)
 
     # ---- per-user page storage (called by sdk.js from inside the sandboxed page)
     def route_relay(self, method, tok):

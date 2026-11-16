@@ -6,7 +6,7 @@
 
 **A private app portal for your own HTML apps, self-hosted on TrueNAS or Docker**
 
-![Version](https://img.shields.io/badge/version-2026--11--16%20mk2-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--16%20mk3-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
 ![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fseanwithanai%2Fpagevault-2496ED)
@@ -246,6 +246,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-16 mk3** | Attachments are sent a piece at a time when opened or downloaded, so big files don't have to fit in memory. Works with the Ledger's backups that now include attachments (A Better Ledger 2026-11-16 mk4). |
 | **2026-11-16 mk2** | **No storage limits.** People can save as much data and as many attachments as the NAS has room for: the 200 MB per person, 10 MB per save, 25 MB per file and 100 MB upload limits are gone (they can still be set if you want one). The home screen shows how much you've saved without an "of" limit. A clear message if the NAS runs out of space. **Existing installs:** remove the `MAX_UPLOAD_MB` and `STORE_QUOTA_MB` lines from the app's YAML, or the old limits stay in place. |
 | **2026-11-16 mk1** | PageVault is now a ready-made image (`ghcr.io/seanwithanai/pagevault`), built automatically with every release. TrueNAS shows **Update available** and updates with one click, with no shell or `git pull`. New Docker setup (`docker-compose.yml`) with optional automatic updates. The `code` dataset is no longer needed; see [Moving an existing TrueNAS install](#moving-an-existing-truenas-install-to-the-image). |
 | **2026-11-16** | The update check skips each repo's `docs/` folder and `index.html`, so an app's GitHub Pages copy doesn't show up as a separate app. |
