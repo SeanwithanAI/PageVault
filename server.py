@@ -34,7 +34,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2026-11-16"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
+VERSION = "2026-11-16 mk1"   # bump with every update: the date; a second release that day is "mk1", then mk2, mk3...
 
 # --------------------------------------------------------------------------- config
 DATA_DIR = os.environ.get("DATA_DIR", "/data")

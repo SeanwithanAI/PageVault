@@ -4,11 +4,12 @@
 
 # PageVault
 
-**A private app portal for your own HTML apps, self-hosted on TrueNAS**
+**A private app portal for your own HTML apps, self-hosted on TrueNAS or Docker**
 
-![Version](https://img.shields.io/badge/version-2026--11--16-2563eb)
+![Version](https://img.shields.io/badge/version-2026--11--16%20mk1-2563eb)
 ![Python](https://img.shields.io/badge/python-3.12%20·%20stdlib%20only-3776AB)
 ![TrueNAS SCALE](https://img.shields.io/badge/TrueNAS%20SCALE-24.10%2B-0095D5)
+![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fseanwithanai%2Fpagevault-2496ED)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)
 
 *by SeanwithanAI*
@@ -26,7 +27,7 @@ PageVault turns single-file HTML apps (A Better Ledger, A Better PTO Tracker, A 
 - **You (admin)** upload apps or pull them from GitHub, give each one a name, logo and link, create accounts, and decide who can use what.
 - **Everyone else** signs in and picks from their apps. Whatever an app saves is stored **on your NAS**, separately for each person, and follows them to any device.
 
-It's one Python file and a `static/` folder, using only the Python standard library on the official `python:3.12-alpine` image. There's nothing to build and no third-party packages.
+It's one Python file and a `static/` folder, using only the Python standard library. It ships as a ready-made image, `ghcr.io/seanwithanai/pagevault`, rebuilt automatically with every release, so there's nothing to build and updates are one click.
 
 ## Screenshots
 
@@ -88,52 +89,67 @@ Every app in PageVault runs from your server, so it works the same on every devi
 
 Away from home, you'll need a way to reach your server, such as a VPN back to your home network.
 
-## Installation (TrueNAS SCALE 24.10+)
+## Installation
 
-This server uses three datasets, created with the **Apps** dataset preset:
+Pick **TrueNAS** or **Docker**. Both use the same ready-made image and both get updates the same easy way.
+
+### TrueNAS SCALE (24.10+)
+
+This server uses two datasets, created with the **Apps** dataset preset:
 
 | Dataset | Holds |
 |---|---|
-| `Storage/Configs/PageVault/code` | This repository (`server.py`, `static/`) |
 | `Storage/Configs/PageVault/apps` | Uploaded HTML apps |
 | `Storage/Configs/PageVault/data` | Accounts and everyone's saved data. **Snapshot this one.** |
 
-1. **Put the code in place.** Download this repository into the `code` dataset; see [Updating PageVault](#updating-pagevault). The folder should contain `server.py` and `static/` directly.
-2. **Install the app.** Go to **Apps → Discover Apps → ⋮ → Install via YAML**, name it `pagevault`, and paste [`truenas-app.yaml`](truenas-app.yaml). The paths are already set for this server.
-3. **Open it.** Go to `http://<truenas-ip>:8090`. The first account created becomes the admin.
-4. **Connect GitHub.** In **Updates**, list the app repos, paste a read-only token, and click **Add as new app** on each.
+1. **Install the app.** Go to **Apps → Discover Apps → ⋮ → Install via YAML**, name it `pagevault`, and paste [`truenas-app.yaml`](truenas-app.yaml). Change the dataset paths if yours differ.
+2. **Open it.** Go to `http://<truenas-ip>:8090`. The first account created becomes the admin.
+3. **Connect GitHub (optional).** In **Updates**, list your app repos and click **Add as new app** on each.
 
 **If it won't start:** check **Apps → pagevault → Logs**. "Permission denied" means the `apps` user can't use a dataset. Fix it with **Datasets → Edit Permissions**.
 
+### Docker (any Linux PC, Raspberry Pi, NAS…)
+
+1. Make a folder (for example `~/pagevault`) and save [`docker-compose.yml`](docker-compose.yml) in it.
+2. In that folder, run:
+   ```sh
+   docker compose up -d
+   ```
+3. Open `http://<this-computer's-ip>:8090`. The first account created becomes the admin.
+
+Your data is kept in Docker volumes named `pagevault-data` and `pagevault-apps`, so it survives updates and restarts. The compose file also shows how to use plain folders instead. Works on regular PCs (amd64) and Raspberry Pi / ARM (arm64).
+
+Prefer one command? This does the same thing:
+
+```sh
+docker run -d --name pagevault --restart unless-stopped -p 8090:8080 \
+  -v pagevault-data:/data -v pagevault-apps:/apps ghcr.io/seanwithanai/pagevault:latest
+```
+
 ## Updating PageVault
 
-PageVault's own updates are released to this repository. Your NAS downloads them with `git`, using the same read-only token as the Updates tab. The token must include this repo with **Contents: Read-only**.
+Every PageVault release is published as a new image. Your apps and data live outside it and are never touched by an update.
 
-**One-time setup** (TrueNAS shell, as root: **System → Shell**, then `sudo -i`):
+**TrueNAS:** when a release is out, **Apps → Installed** shows **Update available** on `pagevault` (TrueNAS checks for you). Click the app, then **Update**. The new version number appears next to the PageVault name on the home screen. If the badge doesn't appear, make sure **Apps → Configuration → Settings → Check for docker image updates** is on.
 
-```sh
-cd /mnt/Storage/Configs/PageVault/code
-git init -b main
-git remote add origin https://x-access-token:YOUR_TOKEN@github.com/SeanwithanAI/PageVault.git
-git fetch origin main
-git reset --hard origin/main
-git branch --set-upstream-to=origin/main main
-```
-
-**Each update:**
+**Docker, by hand:** in the folder with `docker-compose.yml`:
 
 ```sh
-cd /mnt/Storage/Configs/PageVault/code && git pull
+docker compose pull && docker compose up -d
 ```
 
-Then restart the app (**Apps → pagevault → Restart**). The new version number appears next to the PageVault name on the home screen. Your apps and data live in other datasets and are never touched.
+**Docker, automatically:** open `docker-compose.yml`, remove the `#` in front of the `watchtower` section, and run `docker compose up -d` again. It checks once a day at 4 AM and updates only PageVault.
 
-**When the token is renewed:**
+**Pinning or rolling back:** each release is also tagged with its version, e.g. `ghcr.io/seanwithanai/pagevault:2026-11-16-mk1`. Use that instead of `latest` to stay on one version.
 
-```sh
-cd /mnt/Storage/Configs/PageVault/code
-git remote set-url origin https://x-access-token:NEW_TOKEN@github.com/SeanwithanAI/PageVault.git
-```
+### Moving an existing TrueNAS install to the image
+
+Older installs ran the code from a `code` dataset and were updated with `git pull`. To switch:
+
+1. **Apps → Installed → pagevault → Edit**, replace the YAML with the new [`truenas-app.yaml`](truenas-app.yaml), and **Save**.
+2. Check PageVault opens and shows version **2026-11-16 mk1** or newer.
+
+Accounts, apps and data stay exactly where they were. The `code` dataset isn't used anymore; delete it once you're happy.
 
 ## App updates from GitHub
 
@@ -218,7 +234,9 @@ static/
   style.css          styles (light and dark)
   favicon.svg        logo
 truenas-app.yaml     TrueNAS "Install via YAML" definition
-Dockerfile           optional: build a self-contained image instead
+docker-compose.yml   Docker setup (with optional automatic updates)
+Dockerfile           how the image is built
+.github/workflows/   builds and publishes the image on every release
 docs/screenshots/    README images
 ```
 
@@ -226,6 +244,7 @@ docs/screenshots/    README images
 
 | Version | Notes |
 |---|---|
+| **2026-11-16 mk1** | PageVault is now a ready-made image (`ghcr.io/seanwithanai/pagevault`), built automatically with every release. TrueNAS shows **Update available** and updates with one click, with no shell or `git pull`. New Docker setup (`docker-compose.yml`) with optional automatic updates. The `code` dataset is no longer needed; see [Moving an existing TrueNAS install](#moving-an-existing-truenas-install-to-the-image). |
 | **2026-11-16** | The update check skips each repo's `docs/` folder and `index.html`, so an app's GitHub Pages copy doesn't show up as a separate app. |
 | **2026-11-15** | An app's **app + data** zip now always contains the exact installed file, even when the app has been open longer than its 24-hour link (it used to fall back to the browser's own copy of the page). |
 | **2026-11-14 mk6** | Apps can fetch their installed file for their **app + data** zip download. |

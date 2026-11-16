@@ -1,0 +1,45 @@
+# PageVault with Docker (any Linux PC, Raspberry Pi, Synology, Unraid, etc.)
+#
+#   1. Save this file in a new folder, e.g. ~/pagevault/docker-compose.yml
+#   2. In that folder run:   docker compose up -d
+#   3. Open http://<this-computer's-ip>:8090  — the first account created becomes the admin.
+#
+# Update by hand:   docker compose pull && docker compose up -d
+# Or let it update itself: remove the # in front of the "watchtower" section below.
+services:
+  pagevault:
+    image: ghcr.io/seanwithanai/pagevault:latest
+    container_name: pagevault
+    restart: unless-stopped
+    ports:
+      - "8090:8080"                    # change 8090 if that port is taken
+    environment:
+      TZ: America/Chicago              # your time zone
+      MAX_UPLOAD_MB: "100"
+      STORE_QUOTA_MB: "200"
+      COOKIE_SECURE: "0"               # "1" if you serve it over HTTPS
+    volumes:
+      - pagevault-data:/data           # accounts + everyone's saved data (back this up)
+      - pagevault-apps:/apps           # uploaded HTML apps
+      # Prefer plain folders you can see? Swap the two lines above for these,
+      # then run once:  sudo chown -R 568:568 ./data ./apps
+      # - ./data:/data
+      # - ./apps:/apps
+
+  # Optional automatic updates. Checks once a day and updates ONLY PageVault.
+  # (Watchtower needs access to Docker itself, which is what the docker.sock line gives it.)
+  # watchtower:
+  #   image: nickfedor/watchtower
+  #   container_name: pagevault-watchtower
+  #   restart: unless-stopped
+  #   environment:
+  #     TZ: America/Chicago
+  #     WATCHTOWER_CLEANUP: "true"       # delete the old image after updating
+  #     WATCHTOWER_SCHEDULE: "0 0 4 * * *"   # every day at 4:00 AM
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   command: pagevault
+
+volumes:
+  pagevault-data:
+  pagevault-apps:
